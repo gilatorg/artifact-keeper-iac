@@ -168,6 +168,11 @@ backend:
     type: ClusterIP
     httpPort: 8080
     grpcPort: 9090
+    # -- Extra annotations for the Service. Needed for AWS ALB with
+    # target-type=ip, whose default probe is `GET /` and would fail here:
+    #   alb.ingress.kubernetes.io/healthcheck-path: /readyz
+    #   alb.ingress.kubernetes.io/success-codes: "200"
+    annotations: {}
   # -- Unauthenticated Prometheus metrics listener.
   # When enabled, the backend starts a second TCP listener on `metricsPort`
   # serving only `GET /metrics` with no authentication. Intended for
@@ -427,6 +432,11 @@ web:
   service:
     type: ClusterIP
     port: 3000
+    # -- Extra annotations for the Service. Needed for AWS ALB with
+    # target-type=ip, whose default probe is `GET /` and would fail here:
+    #   alb.ingress.kubernetes.io/healthcheck-path: /
+    #   alb.ingress.kubernetes.io/success-codes: "200"
+    annotations: {}
   env:
     NEXT_PUBLIC_API_URL: ""
     NODE_ENV: "production"
@@ -822,6 +832,12 @@ scannerAdapter:
 # admin user and API key for backend integration.
 dependencyTrack:
   enabled: true
+  service:
+    # -- Extra annotations for the Dependency-Track Service. Needed for AWS ALB
+    # with target-type=ip, whose default probe is `GET /` and would fail here:
+    #   alb.ingress.kubernetes.io/healthcheck-path: /api/version
+    #   alb.ingress.kubernetes.io/success-codes: "200"
+    annotations: {}
   image:
     repository: dependencytrack/apiserver
     # UPGRADE LANDMINE: keep this below 4.13.0 until the bootstrap changes.
@@ -1048,6 +1064,12 @@ extraManifests: []
 # -- Network policies
 networkPolicy:
   enabled: true
+  # -- Extra CIDRs allowed to reach the ingress-facing pods (backend, web,
+  # dependency-track). Required for AWS ALB with target-type=ip: the load
+  # balancer health-probes and forwards from ENIs in the VPC, not from
+  # ingress-nginx pods, so the ingressNamespace rule below never matches it.
+  # Example: ["10.200.0.0/16"]. Leave empty when using ingress-nginx only.
+  allowedCIDRs: []
   # -- Namespace the ingress controller pods run in. The backend and web
   # policies admit pods labeled `app.kubernetes.io/name: ingress-nginx`, and
   # this pins WHICH namespace those pods may come from. An empty value renders

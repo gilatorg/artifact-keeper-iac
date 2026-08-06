@@ -66,6 +66,16 @@ spec:
       ports:
         - port: {{ .Values.backend.service.httpPort }}
           protocol: TCP
+    {{- range (.Values.networkPolicy.allowedCIDRs | default list) }}
+    # L7 load balancers with target-type=ip (e.g. AWS ALB) reach pods from VPC
+    # ENIs, not from the ingress-controller pods matched above.
+    - from:
+        - ipBlock:
+            cidr: {{ . | quote }}
+      ports:
+        - port: {{ $.Values.backend.service.httpPort }}
+          protocol: TCP
+    {{- end }}
     # Allow Prometheus scraping. The selector matches the
     # kubernetes.io/metadata.name label Kubernetes stamps on every namespace
     # automatically; a bare `name` label matches nothing.
@@ -168,6 +178,16 @@ spec:
       ports:
         - port: {{ .Values.web.service.port }}
           protocol: TCP
+    {{- range (.Values.networkPolicy.allowedCIDRs | default list) }}
+    # L7 load balancers with target-type=ip (e.g. AWS ALB) reach pods from VPC
+    # ENIs, not from the ingress-controller pods matched above.
+    - from:
+        - ipBlock:
+            cidr: {{ . | quote }}
+      ports:
+        - port: {{ $.Values.web.service.port }}
+          protocol: TCP
+    {{- end }}
     # Allow Prometheus scraping. Uses the auto-stamped
     # kubernetes.io/metadata.name namespace label; see the backend policy.
     - from:
@@ -394,6 +414,16 @@ spec:
       ports:
         - port: 8080
           protocol: TCP
+    {{- range (.Values.networkPolicy.allowedCIDRs | default list) }}
+    # L7 load balancers with target-type=ip (e.g. AWS ALB) reach pods from VPC
+    # ENIs, not from the ingress-controller pods matched above.
+    - from:
+        - ipBlock:
+            cidr: {{ . | quote }}
+      ports:
+        - port: 8080
+          protocol: TCP
+    {{- end }}
   egress:
     # DNS resolution
     - ports:
