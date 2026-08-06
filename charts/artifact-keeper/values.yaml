@@ -553,6 +553,10 @@ postgres:
   topologySpreadConstraints: []
 
 # -- External database (used when postgres.enabled=false)
+# With externalSecrets.composeDatabaseUrl=true, host/port/database are baked
+# into the ESO-templated DATABASE_URL (credentials come from the RDS-managed
+# secret referenced by externalSecrets.secrets.dbCredentials, whose JSON has
+# `username` and `password` only). host must be set in that case.
 externalDatabase:
   host: ""
   port: 5432
@@ -995,10 +999,20 @@ externalSecrets:
   storeKind: ClusterSecretStore
   # Refresh interval for syncing secrets from the provider
   refreshInterval: 1h
+  # -- Compose DATABASE_URL in the chart instead of reading a pre-composed
+  # `database-url` property. Turn this on when secrets.dbCredentials points at
+  # an RDS-managed master-user secret, whose JSON carries only `username` and
+  # `password`. The URL is templated from those plus externalDatabase.host/
+  # port/database, so it follows RDS password rotation. Requires
+  # externalDatabase.host to be set.
+  composeDatabaseUrl: false
   # AWS Secrets Manager paths for each secret. These must match the
   # secret names in your AWS Secrets Manager configuration.
   secrets:
     jwtSecret: artifact-keeper/${ENVIRONMENT}/jwt-secret
+    # With composeDatabaseUrl=true this is the RDS-managed master-user secret
+    # (terraform output db_master_user_secret_arn) and needs no `database-url`
+    # property; otherwise it must carry one.
     dbCredentials: artifact-keeper/${ENVIRONMENT}/db-credentials
     s3Keys: artifact-keeper/${ENVIRONMENT}/s3-keys
     opensearchAuth: artifact-keeper/${ENVIRONMENT}/opensearch-auth
