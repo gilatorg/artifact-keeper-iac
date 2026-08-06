@@ -439,6 +439,18 @@ spec:
     - ports:
         - port: 443
           protocol: TCP
+    # The dtrack-init Job carries the dtrack selector labels, so this policy
+    # applies to it too. It must reach the apiserver on :8080 to provision the
+    # API key onto the shared-config volume. Without this egress rule the init
+    # times out indefinitely and the backend reports "Dependency-Track is
+    # unavailable".
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "artifact-keeper.dtrack.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: 8080
+          protocol: TCP
 ---
 # PostgreSQL: accept traffic from backend and DependencyTrack
 apiVersion: networking.k8s.io/v1
