@@ -1052,6 +1052,11 @@ externalSecrets:
     # (terraform output db_master_user_secret_arn) and needs no `database-url`
     # property; otherwise it must carry one.
     dbCredentials: artifact-keeper/${ENVIRONMENT}/db-credentials
+    # Set to "" when the backend ServiceAccount uses IRSA (or an instance
+    # profile). Static keys take PRECEDENCE over web-identity in the AWS SDK
+    # credential chain, so a placeholder or stale value here silently shadows a
+    # working IRSA role and every S3 call returns 403. Empty means no static S3
+    # credentials are synced or injected anywhere.
     s3Keys: artifact-keeper/${ENVIRONMENT}/s3-keys
     opensearchAuth: artifact-keeper/${ENVIRONMENT}/opensearch-auth
     dtAdminPassword: artifact-keeper/${ENVIRONMENT}/dt-admin-password
