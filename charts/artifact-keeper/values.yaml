@@ -749,6 +749,24 @@ trivy:
     # DB fresh from the configured mirror; set true for fully air-gapped clusters
     # where the DB is seeded out of band.
     skipUpdate: false
+  # -- sizeLimit for the /tmp emptyDir, where Trivy stages the vulnerability DB
+  # download (the container sets TMPDIR=/tmp).
+  #
+  # This was hardcoded at 256Mi and got the server EVICTED — "Usage of EmptyDir
+  # volume "tmp" exceeds the limit "256Mi"" — irregularly, 12h to 14d apart,
+  # leaving Failed pods behind. Measured on trivy 0.62.1 against the live DB,
+  # peak /tmp usage during a refresh is 231.7 MiB (237240 KiB): 90.5% of the old
+  # cap, about 24 MiB of headroom. The DB grows over time, so some refreshes fit
+  # and some tipped over — which is why it read as a flake rather than a sizing
+  # bug.
+  #
+  # Note the extracted trivy.db (~1.1 GiB) does NOT pass through here; it is
+  # written into --cache-dir on the PVC. Only the compressed artifact (~104 MiB)
+  # plus staging overhead lands in /tmp, which is why this is sized in the low
+  # GiB instead of tracking full DB size. 2Gi is ~8.8x the measured peak.
+  #
+  # Re-measure with `trivy image --download-db-only` while sampling `du -sk /tmp`.
+  tmpSizeLimit: 2Gi
   persistence:
     size: 5Gi
     storageClass: ""
@@ -760,7 +778,11 @@ trivy:
     limits:
       cpu: "1"
       memory: 2Gi
-      ephemeral-storage: 1Gi
+      # emptyDir usage counts against the container's ephemeral-storage limit,
+      # so this MUST stay above tmpSizeLimit. At the old 1Gi it would bind before
+      # tmpSizeLimit did, re-creating the same eviction at a higher threshold and
+      # making the knob above look like it did nothing.
+      ephemeral-storage: 3Gi
   # -- Per-component scheduling (overrides global)
   tolerations: []
   affinity: {}
