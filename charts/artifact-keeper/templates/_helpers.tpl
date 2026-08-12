@@ -406,6 +406,79 @@ Ingress host. Fleet instances derive it from fleet.host; otherwise ingress.host.
 {{- end -}}
 
 {{/*
+Ingress path list, shared by the public Ingress (ingress.yaml) and the optional
+internal one (ingress-internal.yaml) so the two can never drift. Renders the
+`paths:` entries at zero indentation; callers place them with `nindent`.
+Takes the root context.
+*/}}
+{{- define "artifact-keeper.ingressPaths" -}}
+{{- $backendSvc := printf "%s-backend" (include "artifact-keeper.fullname" .) -}}
+{{- $backendPort := .Values.backend.service.httpPort -}}
+# API and health endpoints
+- path: /api
+  pathType: Prefix
+  backend:
+    service:
+      name: {{ $backendSvc }}
+      port:
+        number: {{ $backendPort }}
+- path: /health
+  pathType: Exact
+  backend:
+    service:
+      name: {{ $backendSvc }}
+      port:
+        number: {{ $backendPort }}
+- path: /ready
+  pathType: Exact
+  backend:
+    service:
+      name: {{ $backendSvc }}
+      port:
+        number: {{ $backendPort }}
+# /metrics is not exposed publicly. Use the ServiceMonitor
+# (servicemonitor.yaml) for Prometheus scraping via ClusterIP.
+# OCI / Docker registry
+- path: /v2
+  pathType: Prefix
+  backend:
+    service:
+      name: {{ $backendSvc }}
+      port:
+        number: {{ $backendPort }}
+# Native package format handlers — route directly to backend
+{{- range list "/maven" "/npm" "/pypi" "/nuget" "/cargo" "/gems" "/go" "/helm" "/debian" "/rpm" "/alpine" "/composer" "/conan" "/conda" "/swift" "/terraform" "/cocoapods" "/hex" "/pub" "/lfs" "/ivy" "/chef" "/puppet" "/ansible" "/cran" "/huggingface" "/jetbrains" "/vscode" "/proto" "/incus" "/ext" }}
+- path: {{ . }}
+  pathType: Prefix
+  backend:
+    service:
+      name: {{ $backendSvc }}
+      port:
+        number: {{ $backendPort }}
+{{- end }}
+# Dependency-Track UI/API. Off by default; opt in with
+# ingress.dtrack.enabled. Reachable via port-forward otherwise
+# (see NOTES.txt).
+{{- if and .Values.dependencyTrack.enabled .Values.ingress.dtrack.enabled }}
+- path: /dtrack
+  pathType: Prefix
+  backend:
+    service:
+      name: {{ include "artifact-keeper.fullname" . }}-dtrack
+      port:
+        number: 8080
+{{- end }}
+# Catch-all: web frontend
+- path: /
+  pathType: Prefix
+  backend:
+    service:
+      name: {{ include "artifact-keeper.fullname" . }}-web
+      port:
+        number: {{ .Values.web.service.port }}
+{{- end -}}
+
+{{/*
 Formats an integer millicore count as a Kubernetes CPU quantity. Whole cores
 render bare (4000 -> "4"); anything else renders in millicores (9500 -> "9500m").
 */}}

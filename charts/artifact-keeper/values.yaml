@@ -990,6 +990,33 @@ ingress:
   tls:
     enabled: true
     secretName: artifact-keeper-tls
+  # -- Optional SECOND Ingress for reaching the same service from inside the
+  # network (templates/ingress-internal.yaml). Enable it when the public
+  # Ingress above is locked down (ALB security group / inbound-cidrs allowlist,
+  # WAF, ...) and in-cluster or in-VPC clients still need a path in that does
+  # not traverse that allowlist -- typically a split-horizon setup where the
+  # same hostname resolves to an internal load balancer from inside.
+  #
+  # The path list is shared with the public Ingress, so routing cannot drift.
+  # Only enabled/host/className/annotations/tls differ.
+  internal:
+    # -- Render the internal Ingress. Also requires ingress.enabled.
+    enabled: false
+    # -- Hostname for the internal Ingress. Empty means "same as ingress.host"
+    # (split-horizon). Set a distinct name if inside and outside must differ.
+    host: ""
+    # -- Ingress class. Empty falls back to ingress.className.
+    className: ""
+    # -- Annotations for the internal Ingress ONLY. Nothing is inherited from
+    # ingress.annotations: the public annotations usually describe an
+    # internet-facing load balancer and would be wrong here. Example (AWS ALB):
+    #   annotations:
+    #     alb.ingress.kubernetes.io/scheme: internal
+    #     alb.ingress.kubernetes.io/group.name: internal
+    annotations: {}
+    tls:
+      enabled: false
+      secretName: ""
 
 # -- Secrets
 # These are development defaults. For production, override via --set or

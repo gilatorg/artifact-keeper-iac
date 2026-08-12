@@ -1,0 +1,45 @@
+{{/*
+=============================================================================
+Optional SECOND Ingress, for reaching the same host from inside the network.
+
+Off by default. Enable it when the public Ingress is locked down (an ALB
+security group / inbound-cidrs allowlist, a WAF, ...) and in-cluster or in-VPC
+clients still need a path in that does not traverse that allowlist. Typical use
+is a split-horizon setup: the same hostname resolves to the public load
+balancer outside and to an internal one inside.
+
+The path list is shared with the public Ingress via the
+"artifact-keeper.ingressPaths" helper, so routing can never drift between the
+two. Everything else -- class, host, annotations -- is independent.
+=============================================================================
+*/}}
+{{- if and .Values.ingress.enabled .Values.ingress.internal.enabled }}
+{{- $className := default .Values.ingress.className .Values.ingress.internal.className }}
+{{- $host := default (include "artifact-keeper.ingressHost" .) .Values.ingress.internal.host }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "artifact-keeper.fullname" . }}-internal
+  labels:
+    {{- include "artifact-keeper.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ingress-internal
+  {{- with .Values.ingress.internal.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if $className }}
+  ingressClassName: {{ $className }}
+  {{- end }}
+  {{- if and .Values.ingress.internal.tls.enabled .Values.ingress.internal.tls.secretName }}
+  tls:
+    - hosts:
+        - {{ $host }}
+      secretName: {{ .Values.ingress.internal.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ $host }}
+      http:
+        paths:
+          {{- include "artifact-keeper.ingressPaths" . | nindent 10 }}
+{{- end }}
