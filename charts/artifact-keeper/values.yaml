@@ -940,6 +940,27 @@ dependencyTrack:
   topologySpreadConstraints: []
 
 # -- Ingress configuration
+# -- Istio ingress. Set enabled when this release is served through an Istio
+# ingress gateway rather than an Ingress controller. The VirtualService renders
+# from the SAME routing table as the Ingress (artifact-keeper.routeSpec), so the
+# two cannot disagree about which paths reach the backend.
+#
+# ingress.enabled and istio.enabled may both be true during a migration - the
+# entry point that actually receives the request wins and the other is inert.
+istio:
+  enabled: false
+  # -- Gateway to bind to, as "namespace/name". Required when enabled.
+  gateway: ""
+  # -- Additional hostnames this VirtualService should answer for, e.g. a
+  # temporary "<app>-istio.example.com" used to verify the mesh path before
+  # cutting the real hostname over.
+  extraHosts: []
+  # -- Per-route timeout (e.g. "300s"). Istio defaults to 15s, which is far too
+  # short for large artifact uploads and downloads - set this before serving
+  # package traffic through the mesh.
+  timeout: ""
+  annotations: {}
+
 ingress:
   enabled: true
   className: nginx

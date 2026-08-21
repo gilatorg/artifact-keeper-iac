@@ -1,0 +1,69 @@
+{{/*
+=============================================================================
+Istio VirtualService - the mesh equivalent of ingress.yaml
+=============================================================================
+Renders from artifact-keeper.routeSpec, the SAME routing table the Ingress uses,
+so a package format added to that list reaches both at once.
+
+Set istio.enabled when the host is served through an Istio ingress gateway
+instead of an Ingress controller. Both may be enabled at once during a
+migration: whichever entry point actually receives the request wins, so the
+inactive one is simply inert.
+=============================================================================
+*/}}
+{{- if .Values.istio.enabled }}
+{{- if not .Values.istio.gateway }}
+{{- fail "istio.gateway is required when istio.enabled is true, e.g. \"istio-ingress/public\" (namespace/name of the Gateway to bind to)." }}
+{{- end }}
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: {{ include "artifact-keeper.fullname" . }}
+  labels:
+    {{- include "artifact-keeper.labels" . | nindent 4 }}
+    app.kubernetes.io/component: virtualservice
+  {{- with .Values.istio.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  hosts:
+    - {{ include "artifact-keeper.ingressHost" . }}
+    {{- range .Values.istio.extraHosts }}
+    - {{ . | quote }}
+    {{- end }}
+  gateways:
+    - {{ .Values.istio.gateway | quote }}
+  http:
+    {{- range (include "artifact-keeper.routeSpec" . | fromYamlArray) }}
+    - name: {{ trimPrefix "/" .path | default "root" | replace "/" "-" }}
+      match:
+        {{- if eq .pathType "Exact" }}
+        - uri:
+            exact: {{ .path | quote }}
+        {{- else if eq .path "/" }}
+        - uri:
+            prefix: "/"
+        {{- else }}
+        {{- /*
+          Kubernetes pathType: Prefix matches on path ELEMENT boundaries, so
+          /maven covers /maven and /maven/x but NOT /mavenfoo. Istio's `prefix`
+          is a raw string match and would swallow /mavenfoo. Emitting both an
+          exact and a trailing-slash prefix reproduces the Ingress semantics
+          exactly - without this, unrelated paths silently reach the backend.
+        */}}
+        - uri:
+            exact: {{ .path | quote }}
+        - uri:
+            prefix: {{ printf "%s/" .path | quote }}
+        {{- end }}
+      route:
+        - destination:
+            host: {{ printf "%s.%s.svc.cluster.local" .service $.Release.Namespace | quote }}
+            port:
+              number: {{ .port | int }}
+      {{- with $.Values.istio.timeout }}
+      timeout: {{ . }}
+      {{- end }}
+    {{- end }}
+{{- end }}

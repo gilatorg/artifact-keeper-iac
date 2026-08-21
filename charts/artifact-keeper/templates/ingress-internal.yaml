@@ -2,18 +2,23 @@
 =============================================================================
 Optional SECOND Ingress, for reaching the same host from inside the network.
 
-Off by default. Enable it when the public Ingress is locked down (an ALB
-security group / inbound-cidrs allowlist, a WAF, ...) and in-cluster or in-VPC
-clients still need a path in that does not traverse that allowlist. Typical use
-is a split-horizon setup: the same hostname resolves to the public load
-balancer outside and to an internal one inside.
+Off by default. Enable it when the public path is locked down (an ALB security
+group / inbound-cidrs allowlist, a WAF, an Istio AuthorizationPolicy, ...) and
+in-cluster or in-VPC clients still need a path in that does not traverse that
+allowlist. Typical use is a split-horizon setup: the same hostname resolves to
+the public load balancer outside and to an internal one inside.
 
-The path list is shared with the public Ingress via the
-"artifact-keeper.ingressPaths" helper, so routing can never drift between the
-two. Everything else -- class, host, annotations -- is independent.
+INDEPENDENT of ingress.enabled, deliberately. When the PUBLIC path moves to an
+Istio gateway (istio.enabled, ingress.enabled=false), this internal Ingress must
+survive - it is the in-VPC route, and gating it on ingress.enabled would delete
+it during that migration and cut internal clients off.
+
+The path list is shared with the public Ingress and the VirtualService via the
+"artifact-keeper.routeSpec" helper, so routing can never drift between them.
+Everything else -- class, host, annotations -- is independent.
 =============================================================================
 */}}
-{{- if and .Values.ingress.enabled .Values.ingress.internal.enabled }}
+{{- if .Values.ingress.internal.enabled }}
 {{- $className := default .Values.ingress.className .Values.ingress.internal.className }}
 {{- $host := default (include "artifact-keeper.ingressHost" .) .Values.ingress.internal.host }}
 apiVersion: networking.k8s.io/v1

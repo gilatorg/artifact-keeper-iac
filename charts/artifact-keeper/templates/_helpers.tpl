@@ -411,71 +411,72 @@ internal one (ingress-internal.yaml) so the two can never drift. Renders the
 `paths:` entries at zero indentation; callers place them with `nindent`.
 Takes the root context.
 */}}
-{{- define "artifact-keeper.ingressPaths" -}}
+{{/*
+The ONE routing table for this chart, as structured data.
+
+Both the Ingress (ingress.yaml) and the Istio VirtualService (virtualservice.yaml)
+render from this, so a path added here reaches every ingress mechanism at once and
+the two can never disagree. Adding a package format means adding it to the list
+below and nowhere else.
+
+Emits a YAML list of {path, pathType, service, port}. ORDER IS SIGNIFICANT: Istio
+evaluates http routes first-match-wins, so the catch-all "/" MUST stay last.
+*/}}
+{{- define "artifact-keeper.routeSpec" -}}
 {{- $backendSvc := printf "%s-backend" (include "artifact-keeper.fullname" .) -}}
 {{- $backendPort := .Values.backend.service.httpPort -}}
-# API and health endpoints
+{{- /* API and health endpoints */}}
 - path: /api
   pathType: Prefix
-  backend:
-    service:
-      name: {{ $backendSvc }}
-      port:
-        number: {{ $backendPort }}
+  service: {{ $backendSvc }}
+  port: {{ $backendPort }}
 - path: /health
   pathType: Exact
-  backend:
-    service:
-      name: {{ $backendSvc }}
-      port:
-        number: {{ $backendPort }}
+  service: {{ $backendSvc }}
+  port: {{ $backendPort }}
 - path: /ready
   pathType: Exact
-  backend:
-    service:
-      name: {{ $backendSvc }}
-      port:
-        number: {{ $backendPort }}
-# /metrics is not exposed publicly. Use the ServiceMonitor
-# (servicemonitor.yaml) for Prometheus scraping via ClusterIP.
-# OCI / Docker registry
+  service: {{ $backendSvc }}
+  port: {{ $backendPort }}
+{{- /* /metrics is not exposed publicly. Use the ServiceMonitor
+       (servicemonitor.yaml) for Prometheus scraping via ClusterIP. */}}
+{{- /* OCI / Docker registry */}}
 - path: /v2
   pathType: Prefix
-  backend:
-    service:
-      name: {{ $backendSvc }}
-      port:
-        number: {{ $backendPort }}
-# Native package format handlers — route directly to backend
+  service: {{ $backendSvc }}
+  port: {{ $backendPort }}
+{{- /* Native package format handlers - route directly to backend */}}
 {{- range list "/maven" "/npm" "/pypi" "/nuget" "/cargo" "/gems" "/go" "/helm" "/debian" "/rpm" "/alpine" "/composer" "/conan" "/conda" "/swift" "/terraform" "/cocoapods" "/hex" "/pub" "/lfs" "/ivy" "/chef" "/puppet" "/ansible" "/cran" "/huggingface" "/jetbrains" "/vscode" "/proto" "/incus" "/ext" }}
 - path: {{ . }}
   pathType: Prefix
-  backend:
-    service:
-      name: {{ $backendSvc }}
-      port:
-        number: {{ $backendPort }}
+  service: {{ $backendSvc }}
+  port: {{ $backendPort }}
 {{- end }}
-# Dependency-Track UI/API. Off by default; opt in with
-# ingress.dtrack.enabled. Reachable via port-forward otherwise
-# (see NOTES.txt).
+{{- /* Dependency-Track UI/API. Off by default; opt in with ingress.dtrack.enabled.
+       Reachable via port-forward otherwise (see NOTES.txt). */}}
 {{- if and .Values.dependencyTrack.enabled .Values.ingress.dtrack.enabled }}
 - path: /dtrack
   pathType: Prefix
-  backend:
-    service:
-      name: {{ include "artifact-keeper.fullname" . }}-dtrack
-      port:
-        number: 8080
+  service: {{ include "artifact-keeper.fullname" . }}-dtrack
+  port: 8080
 {{- end }}
-# Catch-all: web frontend
+{{- /* Catch-all: web frontend. MUST BE LAST. */}}
 - path: /
   pathType: Prefix
+  service: {{ include "artifact-keeper.fullname" . }}-web
+  port: {{ .Values.web.service.port }}
+{{- end -}}
+
+{{- define "artifact-keeper.ingressPaths" -}}
+{{- range (include "artifact-keeper.routeSpec" . | fromYamlArray) }}
+- path: {{ .path }}
+  pathType: {{ .pathType }}
   backend:
     service:
-      name: {{ include "artifact-keeper.fullname" . }}-web
+      name: {{ .service }}
       port:
-        number: {{ .Values.web.service.port }}
+        number: {{ .port | int }}
+{{- end }}
 {{- end -}}
 
 {{/*
