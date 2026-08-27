@@ -350,26 +350,11 @@ spec:
           resources:
             {{- include "artifact-keeper.backend.resources" . | nindent 12 }}
           startupProbe:
-            httpGet:
-              path: /readyz
-              port: http
-            periodSeconds: 5
-            timeoutSeconds: 5
-            failureThreshold: 30
+            {{- toYaml .Values.backend.startupProbe | nindent 12 }}
           livenessProbe:
-            httpGet:
-              path: /livez
-              port: http
-            periodSeconds: 15
-            timeoutSeconds: 5
-            failureThreshold: 5
+            {{- toYaml .Values.backend.livenessProbe | nindent 12 }}
           readinessProbe:
-            httpGet:
-              path: /readyz
-              port: http
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 5
+            {{- toYaml .Values.backend.readinessProbe | nindent 12 }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp

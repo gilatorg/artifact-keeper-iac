@@ -438,6 +438,42 @@ backend:
     # rollingUpdate:
     #   maxUnavailable: 0
     #   maxSurge: 1
+  # -- Backend startup probe. The values below are what this chart hardcoded
+  # before the key existed, so an install that does not set it is unchanged.
+  #
+  # `failureThreshold` x `periodSeconds` is the whole budget the backend has to
+  # become ready, and schema migrations run inside it -- the backend does not
+  # listen while one is in flight. The default 30 x 5s = 150s is sized for a
+  # steady-state restart, NOT for an upgrade that carries a long migration
+  # (upstream migration 193, new in app 1.7.3, rebuilds the OCI index and can
+  # far exceed it on a large instance). A probe that fires mid-migration kills
+  # the pod, and the next pod restarts the same migration: a crash loop that
+  # never converges. Raise this BEFORE deploying an image that carries one --
+  # Helm deep-merges values maps, so an install can override `failureThreshold`
+  # alone and keep the rest of this block.
+  startupProbe:
+    httpGet:
+      path: /readyz
+      port: http
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 30
+  # -- Backend liveness probe. Defaults as hardcoded previously.
+  livenessProbe:
+    httpGet:
+      path: /livez
+      port: http
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 5
+  # -- Backend readiness probe. Defaults as hardcoded previously.
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: http
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 5
   autoscaling:
     enabled: false
     minReplicas: 2
