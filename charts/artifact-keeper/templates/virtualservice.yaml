@@ -1,9 +1,27 @@
 {{/*
 =============================================================================
-Istio VirtualService - the mesh equivalent of ingress.yaml
+Istio VirtualServices - the mesh equivalent of ingress.yaml
 =============================================================================
 Renders from artifact-keeper.routeSpec, the SAME routing table the Ingress uses,
 so a package format added to that list reaches both at once.
+
+ONE VirtualService PER GATEWAY, not one listing several. The split is what makes
+private DNS work: external-dns resolves a record's target from the Gateway a
+VirtualService binds to, and only istio-ingress/private carries a target
+annotation. A single object bound to both Gateways would merge their targets and
+risk writing the internet-facing ALB into the private zone.
+
+  istio:
+    enabled: true
+    gateways:
+      - name: public          # object-name suffix; must be unique
+        gateway: istio-ingress/public
+      - name: private         # in-VPC leg; publishes the private-zone record
+        gateway: istio-ingress/private
+
+Per entry: `hosts` defaults to the Ingress host plus istio.extraHosts, and
+`annotations` is per-object. istio.gateway (singular string) is still accepted
+and behaves as a single entry named "public".
 
 Set istio.enabled when the host is served through an Istio ingress gateway
 instead of an Ingress controller. Both may be enabled at once during a
@@ -12,30 +30,37 @@ inactive one is simply inert.
 =============================================================================
 */}}
 {{- if .Values.istio.enabled }}
-{{- if not .Values.istio.gateway }}
-{{- fail "istio.gateway is required when istio.enabled is true, e.g. \"istio-ingress/public\" (namespace/name of the Gateway to bind to)." }}
+{{- $defaultHosts := prepend (.Values.istio.extraHosts | default list) (include "artifact-keeper.ingressHost" .) }}
+{{- $gateways := .Values.istio.gateways | default list }}
+{{- if and (not $gateways) .Values.istio.gateway }}
+{{- $gateways = list (dict "name" "public" "gateway" .Values.istio.gateway) }}
 {{- end }}
+{{- if not $gateways }}
+{{- fail "istio.gateways (or istio.gateway) is required when istio.enabled is true, e.g. [{name: public, gateway: istio-ingress/public}]." }}
+{{- end }}
+{{- range $gw := $gateways }}
+{{- if not $gw.gateway }}
+{{- fail (printf "istio.gateways entry %q has no `gateway` (namespace/name of the Gateway to bind to)." ($gw.name | default "<unnamed>")) }}
+{{- end }}
+---
 apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
-  name: {{ include "artifact-keeper.fullname" . }}
+  name: {{ include "artifact-keeper.fullname" $ }}-{{ $gw.name }}
   labels:
-    {{- include "artifact-keeper.labels" . | nindent 4 }}
+    {{- include "artifact-keeper.labels" $ | nindent 4 }}
     app.kubernetes.io/component: virtualservice
-  {{- with .Values.istio.annotations }}
+  {{- with ($gw.annotations | default $.Values.istio.annotations) }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
   hosts:
-    - {{ include "artifact-keeper.ingressHost" . }}
-    {{- range .Values.istio.extraHosts }}
-    - {{ . | quote }}
-    {{- end }}
+    {{- toYaml ($gw.hosts | default $defaultHosts) | nindent 4 }}
   gateways:
-    - {{ .Values.istio.gateway | quote }}
+    - {{ $gw.gateway | quote }}
   http:
-    {{- range (include "artifact-keeper.routeSpec" . | fromYamlArray) }}
+    {{- range (include "artifact-keeper.routeSpec" $ | fromYamlArray) }}
     - name: {{ trimPrefix "/" .path | default "root" | replace "/" "-" }}
       match:
         {{- if eq .pathType "Exact" }}
@@ -66,4 +91,5 @@ spec:
       timeout: {{ . }}
       {{- end }}
     {{- end }}
+{{- end }}
 {{- end }}

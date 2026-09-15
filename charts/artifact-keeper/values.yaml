@@ -1041,7 +1041,20 @@ dependencyTrack:
 # entry point that actually receives the request wins and the other is inert.
 istio:
   enabled: false
-  # -- Gateway to bind to, as "namespace/name". Required when enabled.
+  # -- Gateways to bind to. ONE VirtualService IS RENDERED PER ENTRY - the split
+  # is what makes private DNS work, since external-dns takes a record's target
+  # from the Gateway the VirtualService binds to and only the private Gateway
+  # carries one. Each entry: `name` (object-name suffix, must be unique),
+  # `gateway` ("namespace/name"), optional `hosts` (defaults to the Ingress host
+  # plus extraHosts) and optional `annotations`.
+  #   gateways:
+  #     - name: public
+  #       gateway: istio-ingress/public
+  #     - name: private
+  #       gateway: istio-ingress/private
+  gateways: []
+  # -- DEPRECATED, kept so existing values keep rendering: a single gateway as
+  # "namespace/name", equivalent to one `gateways` entry named "public".
   gateway: ""
   # -- Additional hostnames this VirtualService should answer for, e.g. a
   # temporary "<app>-istio.example.com" used to verify the mesh path before
