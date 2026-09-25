@@ -28,6 +28,9 @@ spec:
     metadata:
       labels:
         {{- include "artifact-keeper.backend.selectorLabels" . | nindent 8 }}
+        {{- range $key, $value := .Values.backend.podLabels }}
+        {{ $key }}: {{ $value | quote }}
+        {{- end }}
     spec:
       {{- with (.Values.backend.tolerations | default .Values.global.tolerations) }}
       tolerations:
@@ -54,11 +57,11 @@ spec:
       initContainers:
         {{- if .Values.cosign.enabled }}
         - name: verify-image-signature
-          image: "{{ .Values.cosign.image.repository }}:{{ .Values.cosign.image.tag }}"
+          image: {{ include "artifact-keeper.image" (dict "image" .Values.cosign.image "context" .) | quote }}
           command: ["cosign", "verify",
             "--certificate-oidc-issuer={{ .Values.cosign.certificateOidcIssuer }}",
             "--certificate-identity-regexp={{ .Values.cosign.certificateIdentityRegexp }}",
-            "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag | default .Chart.AppVersion }}"]
+            {{ include "artifact-keeper.image" (dict "image" .Values.backend.image "defaultTag" .Chart.AppVersion "context" .) | quote }}]
           {{- with .Values.backend.initContainerSecurityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
@@ -75,7 +78,7 @@ spec:
         {{- end }}
         {{- if .Values.postgres.enabled }}
         - name: wait-for-postgres
-          image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+          image: {{ include "artifact-keeper.image" (dict "image" .Values.postgres.image "context" .) | quote }}
           {{- with .Values.backend.initContainerSecurityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
@@ -100,7 +103,7 @@ spec:
         {{- end }}
         {{- if .Values.opensearch.enabled }}
         - name: wait-for-opensearch
-          image: "{{ .Values.backend.waitForOpenSearch.image.repository }}:{{ .Values.backend.waitForOpenSearch.image.tag }}"
+          image: {{ include "artifact-keeper.image" (dict "image" .Values.backend.waitForOpenSearch.image "context" .) | quote }}
           {{- with .Values.backend.initContainerSecurityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
@@ -154,7 +157,7 @@ spec:
         {{- end }}
       containers:
         - name: backend
-          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "artifact-keeper.image" (dict "image" .Values.backend.image "defaultTag" .Chart.AppVersion "context" .) | quote }}
           imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
           {{- with .Values.backend.containerSecurityContext }}
           securityContext:
@@ -177,7 +180,7 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           env:
-            {{- if .Values.dependencyTrack.enabled }}
+            {{- if eq (include "artifact-keeper.dtrackApiKeyFile" .) "true" }}
             # The backend reads the Dependency-Track API key from this file
             # (see resolve_api_key in dependency_track_service.rs). This replaces
             # the previous `sh -c "export ...; exec"` command wrapper, which the
@@ -185,6 +188,15 @@ spec:
             # (CreateContainerError: exec /bin/sh: no such file — iac#199).
             - name: DEPENDENCY_TRACK_API_KEY_FILE
               value: /shared/dtrack-api-key
+            {{- else if .Values.dependencyTrack.enabled }}
+            # resolve_api_key gives the direct value precedence over the file, so
+            # supplying it from a Secret is what lets the shared-config volume
+            # stay unmounted and the backend replicas spread across nodes.
+            - name: DEPENDENCY_TRACK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.dependencyTrack.existingApiKeySecret }}
+                  key: {{ .Values.dependencyTrack.existingApiKeySecretKey }}
             {{- end }}
             {{- range $key, $value := .Values.backend.env }}
             - name: {{ $key }}
@@ -207,20 +219,7 @@ spec:
                 secretKeyRef:
                   name: {{ include "artifact-keeper.secretName" . }}
                   key: JWT_SECRET
-            {{- if or (and .Values.externalSecrets.enabled .Values.externalSecrets.secrets.migrationEncryptionKey) (and (not .Values.externalSecrets.enabled) .Values.secrets.migrationEncryptionKey) }}
-            - name: MIGRATION_ENCRYPTION_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "artifact-keeper.secretName" . }}
-                  key: MIGRATION_ENCRYPTION_KEY
-            {{- end }}
-            {{- if or (and .Values.externalSecrets.enabled .Values.externalSecrets.secrets.webhookSecretKey) (and (not .Values.externalSecrets.enabled) .Values.secrets.webhookSecretKey) }}
-            - name: AK_WEBHOOK_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "artifact-keeper.secretName" . }}
-                  key: AK_WEBHOOK_SECRET_KEY
-            {{- end }}
+            {{- with include "artifact-keeper.encryptionKeyEnv" . }}{{ . | trim | nindent 12 }}{{- end }}
             {{- if .Values.opensearch.enabled }}
             - name: OPENSEARCH_URL
               value: "{{ if .Values.opensearch.disableSecurityPlugin }}http{{ else }}https{{ end }}://{{ include "artifact-keeper.fullname" . }}-opensearch:9200"
@@ -251,6 +250,54 @@ spec:
             # name. Leaves TRIVY_URL (fs/incus path) above untouched.
             - name: TRIVY_ADAPTER_URL
               value: "http://{{ include "artifact-keeper.fullname" . }}-scanner-adapter:8090"
+            {{- end }}
+            {{- if .Values.imageBuilder.enabled }}
+            {{- /*
+            Image builder: where the buildkitd daemon listens and how IT
+            reaches this registry to push (in-cluster, plain HTTP). Values
+            given in backend.env win over these, so an operator can point the
+            backend at a daemon this chart did not deploy.
+            */}}
+            {{- $ib := .Values.imageBuilder }}
+            {{- $env := .Values.backend.env }}
+            {{- if not (hasKey $env "AK_BUILDKIT_ADDR") }}
+            - name: AK_BUILDKIT_ADDR
+              value: "tcp://{{ include "artifact-keeper.fullname" . }}-buildkitd:{{ $ib.service.port }}"
+            {{- end }}
+            {{- if not (hasKey $env "AK_IMAGE_BUILD_PUSH_REGISTRY") }}
+            - name: AK_IMAGE_BUILD_PUSH_REGISTRY
+              value: "{{ include "artifact-keeper.fullname" . }}-backend:{{ .Values.backend.service.httpPort }}"
+            - name: AK_IMAGE_BUILD_REGISTRY_INSECURE
+              value: "true"
+            {{- end }}
+            {{- if and $ib.policy.baseAllowlist (not (hasKey $env "AK_IMAGE_BUILD_BASE_ALLOWLIST")) }}
+            - name: AK_IMAGE_BUILD_BASE_ALLOWLIST
+              value: {{ $ib.policy.baseAllowlist | quote }}
+            {{- end }}
+            {{- if not (hasKey $env "AK_IMAGE_BUILD_ADMIN_ONLY") }}
+            - name: AK_IMAGE_BUILD_ADMIN_ONLY
+              value: {{ $ib.policy.adminOnly | quote }}
+            {{- end }}
+            {{- if not (hasKey $env "AK_IMAGE_BUILD_ALLOW_RUN") }}
+            - name: AK_IMAGE_BUILD_ALLOW_RUN
+              value: {{ $ib.policy.allowRun | quote }}
+            {{- end }}
+            {{- if not (hasKey $env "AK_IMAGE_BUILD_ALLOW_DOCKERFILE") }}
+            - name: AK_IMAGE_BUILD_ALLOW_DOCKERFILE
+              value: {{ $ib.policy.allowDockerfile | quote }}
+            {{- end }}
+            {{- if and $ib.policy.pipIndexUrl (not (hasKey $env "AK_IMAGE_BUILD_PIP_INDEX_URL")) }}
+            - name: AK_IMAGE_BUILD_PIP_INDEX_URL
+              value: {{ $ib.policy.pipIndexUrl | quote }}
+            {{- end }}
+            {{- if not (hasKey $env "AK_IMAGE_BUILD_TIMEOUT_SECS") }}
+            - name: AK_IMAGE_BUILD_TIMEOUT_SECS
+              value: {{ $ib.policy.timeoutSecs | quote }}
+            {{- end }}
+            {{- if not (hasKey $env "AK_IMAGE_BUILD_MAX_CONCURRENT") }}
+            - name: AK_IMAGE_BUILD_MAX_CONCURRENT
+              value: {{ $ib.policy.maxConcurrent | quote }}
+            {{- end }}
             {{- end }}
             {{- if .Values.dependencyTrack.enabled }}
             - name: DEPENDENCY_TRACK_URL
@@ -371,7 +418,7 @@ spec:
             - name: scan-workspace
               mountPath: /scan-workspace
             {{- end }}
-            {{- if .Values.dependencyTrack.enabled }}
+            {{- if eq (include "artifact-keeper.dtrackApiKeyFile" .) "true" }}
             - name: shared-config
               mountPath: /shared
               readOnly: true
@@ -405,7 +452,7 @@ spec:
             sizeLimit: {{ .Values.backend.scanWorkspace.size }}
           {{- end }}
         {{- end }}
-        {{- if .Values.dependencyTrack.enabled }}
+        {{- if eq (include "artifact-keeper.dtrackApiKeyFile" .) "true" }}
         - name: shared-config
           persistentVolumeClaim:
             claimName: {{ include "artifact-keeper.fullname" . }}-shared-config
