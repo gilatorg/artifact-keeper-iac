@@ -161,16 +161,22 @@ spec:
               value: "-Xmx4g"
           resources:
             {{- toYaml .Values.dependencyTrack.resources | nindent 12 }}
+          # httpGet, not an exec of wget: the kubelet makes the request, so the
+          # probe does not depend on what the image ships. dependencytrack/apiserver
+          # 4.13+ has curl but no wget, and an exec of a missing binary is an
+          # "errored" probe that never marks the pod Ready.
           readinessProbe:
-            exec:
-              command: ["wget", "-q", "--spider", "http://localhost:8080/api/version"]
+            httpGet:
+              path: /api/version
+              port: http
             initialDelaySeconds: 60
             periodSeconds: 30
             timeoutSeconds: 10
             failureThreshold: 5
           livenessProbe:
-            exec:
-              command: ["wget", "-q", "--spider", "http://localhost:8080/api/version"]
+            httpGet:
+              path: /api/version
+              port: http
             initialDelaySeconds: 90
             periodSeconds: 30
             timeoutSeconds: 10
