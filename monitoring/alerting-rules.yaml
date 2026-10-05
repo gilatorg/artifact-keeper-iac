@@ -5,6 +5,17 @@
 # reviewed and modified to match your specific infrastructure requirements,
 # security policies, and operational needs before use in production.
 # =============================================================================
+# Gilat adaptation for gfrog-stage/gfrog-prod (namespaces gfrog-*):
+#   * release=kube-prometheus-stack, the label our Prometheus convention uses.
+#   * namespace=~"gfrog-.*" instead of artifact-keeper.*, and ak_* queries
+#     aggregate by namespace so stage and prod alert independently.
+#   * HighLatency reads the ak_http_request_duration_seconds SUMMARY quantile;
+#     the backend exposes no _bucket series.
+#   * DependencyTrackDown uses kube-state-metrics deployment availability;
+#     no scrape job matches .*dtrack.*.
+# Not deployed by the chart: apply by hand
+#   kubectl --context devops-infra-prod apply -f monitoring/alerting-rules.yaml
+# =============================================================================
 
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
@@ -12,7 +23,7 @@ metadata:
   name: artifact-keeper-alerts
   namespace: monitoring
   labels:
-    release: monitoring
+    release: kube-prometheus-stack
     app.kubernetes.io/part-of: artifact-keeper
 spec:
   groups:
@@ -21,9 +32,9 @@ spec:
         - alert: ArtifactKeeperHighErrorRate
           expr: |
             (
-              sum(rate(ak_http_responses_total{status=~"5.."}[5m]))
+              sum by (namespace) (rate(ak_http_responses_total{namespace=~"gfrog-.*", status=~"5.."}[5m]))
               /
-              sum(rate(ak_http_responses_total[5m]))
+              sum by (namespace) (rate(ak_http_responses_total{namespace=~"gfrog-.*"}[5m]))
             ) > 0.05
           for: 5m
           labels:
@@ -34,8 +45,7 @@ spec:
 
         - alert: ArtifactKeeperHighLatency
           expr: |
-            histogram_quantile(0.99, sum(rate(ak_http_request_duration_seconds_bucket[5m])) by (le))
-            > 2
+            max by (namespace) (ak_http_request_duration_seconds{namespace=~"gfrog-.*", quantile="0.99"}) > 2
           for: 5m
           labels:
             severity: warning
@@ -45,7 +55,7 @@ spec:
 
         - alert: ArtifactKeeperPodRestarting
           expr: |
-            increase(kube_pod_container_status_restarts_total{namespace=~"artifact-keeper.*"}[1h]) > 3
+            increase(kube_pod_container_status_restarts_total{namespace=~"gfrog-.*"}[1h]) > 3
           for: 10m
           labels:
             severity: warning
@@ -55,7 +65,7 @@ spec:
 
         - alert: ArtifactKeeperPodNotReady
           expr: |
-            kube_pod_status_ready{namespace=~"artifact-keeper.*", condition="true"} == 0
+            kube_pod_status_ready{namespace=~"gfrog-.*", condition="true"} == 0
           for: 5m
           labels:
             severity: critical
@@ -66,9 +76,9 @@ spec:
         - alert: ArtifactKeeperStorageHigh
           expr: |
             (
-              kubelet_volume_stats_used_bytes{namespace=~"artifact-keeper.*"}
+              kubelet_volume_stats_used_bytes{namespace=~"gfrog-.*"}
               /
-              kubelet_volume_stats_capacity_bytes{namespace=~"artifact-keeper.*"}
+              kubelet_volume_stats_capacity_bytes{namespace=~"gfrog-.*"}
             ) > 0.8
           for: 15m
           labels:
@@ -79,7 +89,7 @@ spec:
 
         - alert: DependencyTrackDown
           expr: |
-            up{job=~".*dtrack.*"} == 0
+            kube_deployment_status_replicas_available{namespace=~"gfrog-.*", deployment=~".*-dtrack"} == 0
           for: 5m
           labels:
             severity: critical
@@ -89,7 +99,7 @@ spec:
 
         - alert: ArtifactKeeperDatabaseConnectionFailure
           expr: |
-            increase(ak_http_responses_total{status="503"}[5m]) > 10
+            increase(ak_http_responses_total{namespace=~"gfrog-.*", status="503"}[5m]) > 10
           for: 2m
           labels:
             severity: critical
