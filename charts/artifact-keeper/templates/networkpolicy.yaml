@@ -85,6 +85,10 @@ spec:
       ports:
         - port: {{ .Values.backend.service.httpPort }}
           protocol: TCP
+        {{- if .Values.backend.metricsListener.enabled }}
+        - port: {{ .Values.backend.metricsListener.port }}
+          protocol: TCP
+        {{- end }}
   egress:
     # DNS resolution
     - ports:

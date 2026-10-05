@@ -520,7 +520,11 @@ All deployments include restrictive security contexts: non-root users, read-only
 
 ## Monitoring
 
-Set `serviceMonitor.enabled: true` to create a Prometheus ServiceMonitor that scrapes the backend's `/metrics` endpoint. The scrape interval defaults to 30 seconds and can be adjusted via `serviceMonitor.interval`.
+Set `serviceMonitor.enabled: true` to create a Prometheus ServiceMonitor for the backend. The scrape interval defaults to 30 seconds and can be adjusted via `serviceMonitor.interval`.
+
+By default the ServiceMonitor scrapes `/api/v1/admin/metrics` on the HTTP port, which requires authentication, so an unauthenticated Prometheus gets a 401. Set `backend.metricsListener.enabled: true` to scrape `/metrics` on a separate unauthenticated listener (`backend.metricsListener.port`, default 9091) instead. When `networkPolicy.enabled` is also set, that port is opened to the `monitoring` namespace only; it is never routed through the Ingress or HTTPRoute.
+
+If your Prometheus only selects ServiceMonitors carrying a label (kube-prometheus-stack defaults to `release: <helm release name>`), set it with `serviceMonitor.labels`.
 
 The [monitoring/](../../monitoring/) directory contains a pre-built Grafana dashboard (12 panels across 4 rows) and 7 PrometheusRule alert definitions covering error rates, latency, pod health, storage usage, and database connectivity.
 

@@ -1533,6 +1533,9 @@ serviceMonitor:
   enabled: false
   interval: 30s
   scrapeTimeout: 10s
+  # -- Extra labels on the ServiceMonitor, e.g. `release: kube-prometheus-stack`
+  # so a Prometheus whose serviceMonitorSelector requires it picks this up.
+  labels: {}
 
 # GKE-specific resources. Only relevant on Google Kubernetes Engine.
 gke:
