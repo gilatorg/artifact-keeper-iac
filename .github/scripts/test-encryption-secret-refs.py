@@ -14,6 +14,7 @@ CHART = Path(__file__).resolve().parents[2] / "charts" / "artifact-keeper"
 KEYS = {
     "migrationEncryptionKey": "MIGRATION_ENCRYPTION_KEY",
     "webhookSecretKey": "AK_WEBHOOK_SECRET_KEY",
+    "ssoEncryptionKey": "SSO_ENCRYPTION_KEY",
 }
 HELM = os.environ.get("HELM_BIN", "helm")
 
@@ -84,7 +85,7 @@ class EncryptionSecretRefsTest(unittest.TestCase):
             self.assertNotIn(name, env)
 
     def test_existing_secret_flags_are_independent_and_only_render_references(self):
-        for enabled in itertools.product((False, True), repeat=2):
+        for enabled in itertools.product((False, True), repeat=len(KEYS)):
             with self.subTest(enabled=enabled):
                 secrets = {"existingSecret": "app-credentials"}
                 secrets.update(
@@ -103,7 +104,7 @@ class EncryptionSecretRefsTest(unittest.TestCase):
                     self.assertNotIn(key + "Enabled", rendered)
 
     def test_chart_managed_inline_values_keep_original_behavior(self):
-        for enabled in itertools.product((False, True), repeat=2):
+        for enabled in itertools.product((False, True), repeat=len(KEYS)):
             with self.subTest(enabled=enabled):
                 secrets = {
                     key: "test-only-" + key
@@ -139,7 +140,7 @@ class EncryptionSecretRefsTest(unittest.TestCase):
                     self.assertNotIn(secrets[key], yaml.safe_dump_all(docs))
 
     def test_eso_paths_control_injection_and_inline_values_remain_ignored(self):
-        for enabled in itertools.product((False, True), repeat=2):
+        for enabled in itertools.product((False, True), repeat=len(KEYS)):
             with self.subTest(enabled=enabled):
                 paths = {
                     key: "provider/" + key
@@ -203,8 +204,18 @@ class EncryptionSecretRefsTest(unittest.TestCase):
         self.assert_ref(env, "AK_WEBHOOK_SECRET_KEY", "webhook-credentials", "custom-key")
 
     def test_backend_env_alone_still_works(self):
+        # backend.env is plaintext in the pod spec, so a key there needs the
+        # explicit backend.allowCredentialsInEnv acknowledgement (#375).
         values = {name: "test-only-" + key for key, name in KEYS.items()}
-        env = self.backend_env(self.manifests({"backend": {"env": values}}))
+        for name in values:
+            with self.subTest(name=name):
+                self.assert_error(
+                    {"backend": {"env": {name: values[name]}}},
+                    "backend.env sets " + name,
+                )
+        env = self.backend_env(self.manifests(
+            {"backend": {"env": values, "allowCredentialsInEnv": True}}
+        ))
         for name, value in values.items():
             self.assertEqual(env[name], {"name": name, "value": value})
 
@@ -255,6 +266,7 @@ class EncryptionSecretRefsTest(unittest.TestCase):
                     }
                 if manual == "env":
                     values["backend"]["env"] = {name: "test-only-env"}
+                    values["backend"]["allowCredentialsInEnv"] = True
                 else:
                     values["backend"]["environmentSecrets"] = [{
                         "name": name,
@@ -278,6 +290,31 @@ class EncryptionSecretRefsTest(unittest.TestCase):
                     {"backend": backend}, name + " has multiple definitions"
                 )
 
+    def test_sso_key_is_opt_in_and_never_generated(self):
+        # SSO_ENCRYPTION_KEY re-keys stored SSO secrets and upstream
+        # credentials (#349), so the chart must never invent one.
+        for values in (
+            {},
+            {"secrets": {"existingSecret": "app-credentials"}},
+            {"externalSecrets": {"enabled": True}},
+        ):
+            with self.subTest(values=values):
+                docs = self.manifests(values)
+                self.assertNotIn("SSO_ENCRYPTION_KEY", self.backend_env(docs))
+                self.assertNotIn("SSO_ENCRYPTION_KEY", yaml.safe_dump_all(docs))
+        docs = self.manifests({"externalSecrets": {
+            "enabled": True, "secrets": {"ssoEncryptionKey": "provider/sso"},
+        }})
+        external = next(doc for doc in docs if doc["kind"] == "ExternalSecret")
+        entry = next(
+            item for item in external["spec"]["data"]
+            if item["secretKey"] == "SSO_ENCRYPTION_KEY"
+        )
+        self.assertEqual(
+            entry["remoteRef"],
+            {"key": "provider/sso", "property": "sso-encryption-key"},
+        )
+
     def test_disabled_backend_does_not_inject_encryption_refs(self):
         docs = self.manifests({
             "backend": {"enabled": False},
@@ -285,6 +322,7 @@ class EncryptionSecretRefsTest(unittest.TestCase):
                 "existingSecret": "app-credentials",
                 "migrationEncryptionKeyEnabled": True,
                 "webhookSecretKeyEnabled": True,
+                "ssoEncryptionKeyEnabled": True,
             },
         })
         self.assert_no_secret_resources(docs)

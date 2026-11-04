@@ -74,6 +74,12 @@ spec:
             - --oci-worker-no-process-sandbox
             - --oci-worker-gc-keepstorage
             - {{ $ib.gcKeepStorage | quote }}
+          {{- /* buildkitd pulls base images and packages from outside the
+                 cluster, so it takes the proxy like the other egress components. */}}
+          {{- with (include "artifact-keeper.proxyEnv" (dict "proxy" $ib.proxy "ctx" $)) }}
+          env:
+            {{- . | trim | nindent 12 }}
+          {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false
@@ -102,11 +108,11 @@ spec:
         - name: cache
           {{- if $ib.persistence.enabled }}
           persistentVolumeClaim:
-            claimName: {{ include "artifact-keeper.fullname" . }}-buildkitd-cache
+            claimName: {{ $ib.persistence.existingClaim | default (printf "%s-buildkitd-cache" (include "artifact-keeper.fullname" .)) }}
           {{- else }}
           emptyDir: {}
           {{- end }}
-{{- if $ib.persistence.enabled }}
+{{- if and $ib.persistence.enabled (not $ib.persistence.existingClaim) }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -115,6 +121,10 @@ metadata:
   labels:
     {{- include "artifact-keeper.labels" . | nindent 4 }}
     app.kubernetes.io/component: image-builder
+  {{- with $ib.persistence.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   accessModes:
     - ReadWriteOnce

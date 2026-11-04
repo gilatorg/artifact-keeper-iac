@@ -190,11 +190,37 @@ app.kubernetes.io/component: dependency-track
 {{- end }}
 
 {{/*
+Whether the Ingress gets the nginx proxy annotations: "true" for className
+`nginx`, or for any class when ingress.nginxAnnotations is true.
+*/}}
+{{- define "artifact-keeper.ingress.rendersNginxAnnotations" -}}
+{{- if or (eq (default "" .Values.ingress.className) "nginx") .Values.ingress.nginxAnnotations -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+The nginx proxy annotations derived from ingress.maxBodySize,
+proxyReadTimeoutSeconds and proxySendTimeoutSeconds, as YAML.
+*/}}
+{{- define "artifact-keeper.ingress.nginxAnnotations" -}}
+{{- $derived := dict -}}
+{{- with .Values.ingress.maxBodySize -}}
+{{- $_ := set $derived "nginx.ingress.kubernetes.io/proxy-body-size" (toString .) -}}
+{{- end -}}
+{{- if not (kindIs "invalid" .Values.ingress.proxyReadTimeoutSeconds) -}}
+{{- $_ := set $derived "nginx.ingress.kubernetes.io/proxy-read-timeout" (toString .Values.ingress.proxyReadTimeoutSeconds) -}}
+{{- end -}}
+{{- if not (kindIs "invalid" .Values.ingress.proxySendTimeoutSeconds) -}}
+{{- $_ := set $derived "nginx.ingress.kubernetes.io/proxy-send-timeout" (toString .Values.ingress.proxySendTimeoutSeconds) -}}
+{{- end -}}
+{{- toYaml $derived -}}
+{{- end -}}
+
+{{/*
 Database URL helper — returns the full DATABASE_URL string
 */}}
 {{- define "artifact-keeper.databaseUrl" -}}
 {{- if .Values.postgres.enabled -}}
-postgresql://{{ .Values.postgres.auth.username }}:{{ .Values.postgres.auth.password }}@{{ include "artifact-keeper.fullname" . }}-postgres:5432/{{ .Values.postgres.auth.database }}
+postgresql://{{ .Values.postgres.auth.username }}:{{ include "artifact-keeper.postgresPassword" . }}@{{ include "artifact-keeper.fullname" . }}-postgres:5432/{{ .Values.postgres.auth.database }}
 {{- else -}}
 postgresql://{{ .Values.externalDatabase.username }}:{{ .Values.externalDatabase.password }}@{{ .Values.externalDatabase.host }}:{{ .Values.externalDatabase.port }}/{{ .Values.externalDatabase.database }}
 {{- end -}}
@@ -227,6 +253,87 @@ operator-supplied Secret; otherwise this is the chart-managed
 {{- end -}}
 
 {{/*
+A credential the chart generates when the operator leaves it empty. Takes a dict
+with root (the chart context), key (the key in the chart's Secret) and length.
+
+Resolution order, and the order matters:
+
+  1. The value stored under that key in the chart's Secret, read back with
+     lookup. This is what keeps it stable across "helm upgrade".
+  2. A value already generated during this render. randAlphaNum differs on every
+     call, and DATABASE_URL and POSTGRES_PASSWORD must hold the same password,
+     so the first result is kept in .Values for the rest of the render. Helm
+     does not store this: a release stores only the values the operator passed.
+  3. A freshly generated alphanumeric value. Alphanumeric because the password
+     goes into DATABASE_URL unencoded.
+
+lookup returns nothing under "helm template" and client-side "--dry-run", so
+those renders produce a new value every time. A GitOps engine that deploys by
+running "helm template" would rotate these on every sync, so such operators must
+set the values or use secrets.existingSecret. See the README, "Generated
+credentials".
+*/}}
+{{- define "artifact-keeper.generatedSecret" -}}
+{{- $values := .root.Values -}}
+{{- if not (hasKey $values "_generatedSecrets") -}}
+{{- $_ := set $values "_generatedSecrets" dict -}}
+{{- end -}}
+{{- if not (hasKey $values._generatedSecrets .key) -}}
+{{- $existing := "" -}}
+{{- $secret := lookup "v1" "Secret" .root.Release.Namespace (include "artifact-keeper.secretName" .root) -}}
+{{- if and $secret $secret.data -}}
+{{- $existing = index $secret.data .key | default "" | b64dec -}}
+{{- end -}}
+{{- $_ := set $values._generatedSecrets .key (default (randAlphaNum .length) $existing) -}}
+{{- end -}}
+{{- index $values._generatedSecrets .key -}}
+{{- end -}}
+
+{{/*
+JWT signing secret: secrets.jwtSecret if set, otherwise generated. 64 alphanumeric
+characters clears the backend's checks (32 characters, 128 estimated bits).
+*/}}
+{{- define "artifact-keeper.jwtSecret" -}}
+{{- if .Values.secrets.jwtSecret -}}
+{{- .Values.secrets.jwtSecret -}}
+{{- else -}}
+{{- include "artifact-keeper.generatedSecret" (dict "root" . "key" "JWT_SECRET" "length" 64) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+In-chart Postgres password: postgres.auth.password if set, otherwise generated.
+*/}}
+{{- define "artifact-keeper.postgresPassword" -}}
+{{- if .Values.postgres.auth.password -}}
+{{- .Values.postgres.auth.password -}}
+{{- else -}}
+{{- include "artifact-keeper.generatedSecret" (dict "root" . "key" "POSTGRES_PASSWORD" "length" 32) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Whether generation is off. Only an explicit false turns it off: "helm upgrade
+--reuse-values" from a chart without secrets.generate leaves the key unset.
+*/}}
+{{- define "artifact-keeper.secretGenerationDisabled" -}}
+{{- if eq (toString .Values.secrets.generate) "false" -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+Comma-separated values the chart is generating or preserving for this release,
+empty when every credential is supplied or the chart renders no Secret.
+*/}}
+{{- define "artifact-keeper.generatedSecretNames" -}}
+{{- $names := list -}}
+{{- if and (not .Values.externalSecrets.enabled) (not .Values.secrets.existingSecret) (ne (include "artifact-keeper.secretGenerationDisabled" .) "true") -}}
+{{- if not .Values.secrets.jwtSecret -}}{{- $names = append $names "secrets.jwtSecret" -}}{{- end -}}
+{{- if and .Values.postgres.enabled (not .Values.postgres.auth.password) -}}{{- $names = append $names "postgres.auth.password" -}}{{- end -}}
+{{- end -}}
+{{- join ", " $names -}}
+{{- end -}}
+
+{{/*
 Dependency-Track admin password.
 
 Resolution order, and the order matters:
@@ -244,14 +351,11 @@ the release.
 Note that lookup returns nothing during "helm template" and "--dry-run", since
 there is no cluster to read. For a one-off render that is harmless: the
 manifest simply shows a throwaway value. It matters a great deal under GitOps
-engines that deploy by re-running "helm template" (ArgoCD, Flux): there, step 2
-never fires and every sync would generate a fresh password, silently desyncing
-the Secret from the password Dependency-Track actually holds. The ArgoCD
-ApplicationSet in this repo handles that with ignoreDifferences on this Secret
-key plus the RespectIgnoreDifferences sync option, so the live value is kept
-after first creation. If you consume this chart through another template-mode
-engine, either replicate that ignore rule or set dependencyTrack.adminPassword
-explicitly.
+engines that deploy by re-running "helm template" (Argo CD): there, step 2 never
+fires and every sync would generate a fresh password, silently desyncing the
+Secret from the password Dependency-Track actually holds. With such an engine, set
+dependencyTrack.adminPassword explicitly or use secrets.existingSecret, as the dev
+element of this repo's ApplicationSet does (values-dev.yaml).
 
 Previously this defaulted to an empty string, which the bootstrap script then
 passed to forceChangePassword; Dependency-Track rejects an empty password with
@@ -275,6 +379,28 @@ passed to forceChangePassword; Dependency-Track rejects an empty password with
 {{- end -}}
 
 {{/*
+Space-separated Dependency-Track permission names the bootstrap Job grants to
+the Automation team (dependencyTrack.bootstrap.automationPermissions). Each
+entry must be an uppercase permission identifier such as BOM_UPLOAD; anything
+else fails the render, because the names are interpolated into the bootstrap
+script and a request path. `dig` falls back to the chart default for
+`helm upgrade --reuse-values` from a chart that predates the key.
+*/}}
+{{- define "artifact-keeper.dtrackAutomationPermissions" -}}
+{{- $default := list "BOM_UPLOAD" "PROJECT_CREATION_UPLOAD" "PORTFOLIO_MANAGEMENT" "VIEW_PORTFOLIO" "VIEW_VULNERABILITY" "VULNERABILITY_ANALYSIS" -}}
+{{- $perms := dig "bootstrap" "automationPermissions" $default .Values.dependencyTrack -}}
+{{- if not (kindIs "slice" $perms) -}}
+{{- fail "dependencyTrack.bootstrap.automationPermissions must be a list of Dependency-Track permission names, e.g. [BOM_UPLOAD, VIEW_PORTFOLIO]" -}}
+{{- end -}}
+{{- range $perms -}}
+{{- if not (and (kindIs "string" .) (regexMatch "^[A-Z][A-Z0-9_]*$" .)) -}}
+{{- fail (printf "dependencyTrack.bootstrap.automationPermissions entry %q is not a Dependency-Track permission name (uppercase letters, digits and underscores, e.g. BOM_UPLOAD)" (toString .)) -}}
+{{- end -}}
+{{- end -}}
+{{- join " " (uniq $perms) -}}
+{{- end -}}
+
+{{/*
 Whether the Dependency-Track API key travels through the shared-config volume.
 False when dependencyTrack.existingApiKeySecret supplies it instead: the volume,
 its mount, DEPENDENCY_TRACK_API_KEY_FILE and the claim are all skipped, and the
@@ -288,6 +414,44 @@ is not required when the key is supplied directly. See iac issue 313.
 */}}
 {{- define "artifact-keeper.dtrackApiKeyFile" -}}
 {{- if and .Values.dependencyTrack.enabled (not .Values.dependencyTrack.existingApiKeySecret) -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+Name of the shared-config claim mounted by the backend and the
+Dependency-Track bootstrap Job: backend.sharedConfig.existingClaim when set,
+otherwise the chart-managed <fullname>-shared-config PVC.
+*/}}
+{{- define "artifact-keeper.sharedConfigClaimName" -}}
+{{- .Values.backend.sharedConfig.existingClaim | default (printf "%s-shared-config" (include "artifact-keeper.fullname" .)) -}}
+{{- end -}}
+
+{{/*
+Reject existingClaim values the chart cannot honor. An existingClaim replaces a
+chart-managed PVC, so it only makes sense while that volume is persistent.
+*/}}
+{{- define "artifact-keeper.validateExistingClaims" -}}
+{{- if and .Values.backend.enabled .Values.backend.persistence.existingClaim -}}
+{{- if .Values.backend.persistence.ephemeral.enabled -}}
+{{- fail "backend.persistence.existingClaim cannot be combined with backend.persistence.ephemeral.enabled: the ephemeral mode creates a per-pod PVC, so there is no shared claim to replace. Unset one of them." -}}
+{{- end -}}
+{{- if not .Values.backend.persistence.enabled -}}
+{{- fail "backend.persistence.existingClaim requires backend.persistence.enabled=true (with persistence disabled the backend uses an emptyDir and would ignore the claim)" -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.backend.enabled .Values.backend.scanWorkspace.existingClaim (not .Values.backend.scanWorkspace.enabled) -}}
+{{- fail "backend.scanWorkspace.existingClaim requires backend.scanWorkspace.enabled=true (with it disabled each backend pod gets an emptyDir and would ignore the claim)" -}}
+{{- end -}}
+{{- if and .Values.opensearch.enabled .Values.opensearch.persistence.existingClaim -}}
+{{- if not .Values.opensearch.persistence.enabled -}}
+{{- fail "opensearch.persistence.existingClaim requires opensearch.persistence.enabled=true (with persistence disabled OpenSearch uses an emptyDir and would ignore the claim)" -}}
+{{- end -}}
+{{- if gt (int .Values.opensearch.replicaCount) 1 -}}
+{{- fail "opensearch.persistence.existingClaim is only supported with opensearch.replicaCount=1: a multi-node cluster is a StatefulSet whose volumeClaimTemplates give each node its own PVC, and one claim cannot back several nodes" -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.imageBuilder.enabled .Values.imageBuilder.persistence.existingClaim (not .Values.imageBuilder.persistence.enabled) -}}
+{{- fail "imageBuilder.persistence.existingClaim requires imageBuilder.persistence.enabled=true (with persistence disabled the build cache is an emptyDir and would ignore the claim)" -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -336,16 +500,86 @@ DATABASE_URL keeps working.
 {{- if or .Values.externalSecrets.enabled .Values.secrets.existingSecret -}}
 {{- /* Secrets are supplied externally; no chart-owned Secret to validate. */ -}}
 {{- else -}}
+{{- if eq (include "artifact-keeper.secretGenerationDisabled" .) "true" -}}
 {{- if eq .Values.secrets.jwtSecret "" -}}
-{{- fail "secrets.jwtSecret is required when externalSecrets is not enabled. Set it with --set secrets.jwtSecret=<value>" -}}
+{{- fail "secrets.jwtSecret is required when externalSecrets is not enabled and secrets.generate is false. Set it with --set secrets.jwtSecret=<value>" -}}
 {{- end -}}
 {{- if and .Values.postgres.enabled (eq .Values.postgres.auth.password "") -}}
-{{- fail "postgres.auth.password is required when postgres is enabled. Set it with --set postgres.auth.password=<value>" -}}
+{{- fail "postgres.auth.password is required when postgres is enabled and secrets.generate is false. Set it with --set postgres.auth.password=<value>" -}}
+{{- end -}}
 {{- end -}}
 {{- if and .Values.opensearch.enabled (not .Values.opensearch.disableSecurityPlugin) (eq .Values.opensearch.auth.password "") -}}
 {{- fail "opensearch.auth.password is required when opensearch is enabled and disableSecurityPlugin is false. Set it with --set opensearch.auth.password=<value>" -}}
 {{- end -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+Credential-like keys set to a non-empty value in backend.env, as a
+comma-separated string ("" when there are none). backend.env is rendered
+verbatim into the pod spec, so a value there is readable by anyone who can get
+the Deployment or its pods, or read the Helm release Secret (#375).
+Credentials belong in backend.environmentSecrets (secretKeyRef). DATABASE_URL
+counts only when it carries a password. Empty values are placeholders and pass.
+*/}}
+{{- define "artifact-keeper.backendEnvCredentials" -}}
+{{- $env := .Values.backend.env | default dict -}}
+{{- $secretEnv := list -}}
+{{- range .Values.backend.environmentSecrets -}}
+{{- $secretEnv = append $secretEnv .name -}}
+{{- end -}}
+{{- $env = deepCopy $env -}}
+{{- range $secretEnv -}}
+{{- $_ := unset $env . -}}
+{{- end -}}
+{{- $found := list -}}
+{{- range $key := list
+    "ADMIN_PASSWORD" "INITIAL_ADMIN_PASSWORD" "JWT_SECRET"
+    "S3_SECRET_KEY" "S3_SECRET_ACCESS_KEY" "S3_PRESIGN_SECRET_ACCESS_KEY"
+    "AZURE_STORAGE_ACCESS_KEY" "AZURE_CLIENT_SECRET" "GCS_PRIVATE_KEY" "CLOUDFRONT_PRIVATE_KEY"
+    "DEPENDENCY_TRACK_API_KEY" "DTRACK_HTTP_PROXY_PASSWORD" "OPENSEARCH_PASSWORD"
+    "OIDC_CLIENT_SECRET" "LDAP_BIND_PASSWORD" "SMTP_PASSWORD" "GITHUB_TOKEN"
+    "PEER_API_KEY" "EDGE_API_KEY"
+    "SSO_ENCRYPTION_KEY" "MIGRATION_ENCRYPTION_KEY" "AK_WEBHOOK_SECRET_KEY" -}}
+{{- if toString (get $env $key) -}}
+{{- $found = append $found $key -}}
+{{- end -}}
+{{- end -}}
+{{- if regexMatch "^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]*:[^/?#@]+@" (toString (get $env "DATABASE_URL")) -}}
+{{- $found = append $found "DATABASE_URL" -}}
+{{- end -}}
+{{- join ", " $found -}}
+{{- end -}}
+
+{{/*
+Fail the render when backend.env carries credentials, unless
+backend.allowCredentialsInEnv acknowledges it (NOTES.txt then warns).
+*/}}
+{{- define "artifact-keeper.validateBackendEnvCredentials" -}}
+{{- /* dig: `helm upgrade --reuse-values` keeps the previous chart's defaults, which lack this key. */ -}}
+{{- $allow := dig "allowCredentialsInEnv" false .Values.backend -}}
+{{- if not (kindIs "bool" $allow) -}}
+{{- fail "backend.allowCredentialsInEnv must be a boolean" -}}
+{{- end -}}
+{{- $found := include "artifact-keeper.backendEnvCredentials" . -}}
+{{- if and $found (not $allow) -}}
+{{- fail (printf "backend.env sets %s. backend.env is rendered in plaintext into the pod spec, where anyone who can read the Deployment, its pods or the Helm release can recover it. Move each one to backend.environmentSecrets (a secretKeyRef to a Secret you manage; see values.yaml) and rotate the exposed value, or set backend.allowCredentialsInEnv=true to accept the exposure (throwaway test installs only)." $found) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Returns "true" when the chart Secret carries SMTP_PASSWORD, so the backend
+should reference it. Mirrors the encryption-key wiring below: with
+externalSecrets.enabled the ExternalSecret maps the key whenever
+externalSecrets.secrets.smtpPassword is set, so secrets.smtpPassword (which
+then has nowhere to go) is not consulted; otherwise a nonempty
+secrets.smtpPassword enables the reference (into the chart-rendered Secret, or
+into secrets.existingSecret for compatibility).
+*/}}
+{{- define "artifact-keeper.smtpPasswordManaged" -}}
+{{- if .Values.externalSecrets.enabled -}}
+{{- if .Values.externalSecrets.secrets.smtpPassword -}}true{{- end -}}
+{{- else if .Values.secrets.smtpPassword -}}true{{- end -}}
 {{- end -}}
 
 {{/*
@@ -357,7 +591,8 @@ Validate only these env names; other backend environment wiring is independent.
 {{- $root := . -}}
 {{- range $key := list
     (dict "value" "migrationEncryptionKey" "flag" "migrationEncryptionKeyEnabled" "env" "MIGRATION_ENCRYPTION_KEY")
-    (dict "value" "webhookSecretKey" "flag" "webhookSecretKeyEnabled" "env" "AK_WEBHOOK_SECRET_KEY") -}}
+    (dict "value" "webhookSecretKey" "flag" "webhookSecretKeyEnabled" "env" "AK_WEBHOOK_SECRET_KEY")
+    (dict "value" "ssoEncryptionKey" "flag" "ssoEncryptionKeyEnabled" "env" "SSO_ENCRYPTION_KEY") -}}
 {{- $enabled := get $root.Values.secrets $key.flag -}}
 {{- if not (kindIs "bool" $enabled) -}}
 {{- fail (printf "secrets.%s must be a boolean" $key.flag) -}}
@@ -383,6 +618,90 @@ Validate only these env names; other backend environment wiring is independent.
     secretKeyRef:
       name: {{ include "artifact-keeper.secretName" $root }}
       key: {{ $key.env }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Optional backend tuning variables from backend.logging (LOG_FORMAT, LOG_ANSI,
+#387) and backend.stuckScan (STUCK_SCAN_THRESHOLD_SECS,
+STUCK_SCAN_CHECK_INTERVAL_SECS, #101). Each renders only when its value
+differs from the backend's own default, so an install that leaves them alone
+renders no new variables. Invalid values fail the render.
+
+As with METRICS_PORT (#381), each name is rendered at most once. A
+backend.env entry with the same name wins when the chart value is left at its
+default, and must agree with it otherwise; a backend.environmentSecrets entry
+with the same name conflicts with a non-default chart value.
+*/}}
+{{- define "artifact-keeper.backendTuningEnv" -}}
+{{- $backend := .Values.backend -}}
+{{- $env := $backend.env | default dict -}}
+{{- /* dig: `helm upgrade --reuse-values` keeps the previous chart's
+       defaults, which lack these keys. */ -}}
+{{- $logging := dig "logging" dict $backend -}}
+{{- $stuck := dig "stuckScan" dict $backend -}}
+{{- if kindIs "invalid" $logging -}}{{- $logging = dict -}}{{- end -}}
+{{- if kindIs "invalid" $stuck -}}{{- $stuck = dict -}}{{- end -}}
+{{- if not (kindIs "map" $logging) -}}
+{{- fail "backend.logging must be a map" -}}
+{{- end -}}
+{{- if not (kindIs "map" $stuck) -}}
+{{- fail "backend.stuckScan must be a map" -}}
+{{- end -}}
+{{- $vars := list -}}
+{{- /* hasKey, not `default`: `default` would turn an explicit false into the
+       default and hide a mistyped value. */ -}}
+{{- $format := "text" -}}
+{{- if hasKey $logging "format" -}}{{- $format = get $logging "format" -}}{{- end -}}
+{{- if not (and (kindIs "string" $format) (has $format (list "text" "json"))) -}}
+{{- fail (printf "backend.logging.format must be \"text\" or \"json\"; got %v" $format) -}}
+{{- end -}}
+{{- if ne $format "text" -}}
+{{- $vars = append $vars (dict "name" "LOG_FORMAT" "value" $format "path" "backend.logging.format") -}}
+{{- end -}}
+{{- $ansi := "auto" -}}
+{{- if hasKey $logging "ansi" -}}{{- $ansi = get $logging "ansi" -}}{{- end -}}
+{{- if not (or (kindIs "bool" $ansi) (and (kindIs "string" $ansi) (has $ansi (list "auto" "true" "false")))) -}}
+{{- fail (printf "backend.logging.ansi must be \"auto\", \"true\" or \"false\"; got %v" $ansi) -}}
+{{- end -}}
+{{- $ansi = toString $ansi -}}
+{{- if ne $ansi "auto" -}}
+{{- $vars = append $vars (dict "name" "LOG_ANSI" "value" $ansi "path" "backend.logging.ansi") -}}
+{{- end -}}
+{{- range $item := list
+    (dict "key" "thresholdSecs" "name" "STUCK_SCAN_THRESHOLD_SECS")
+    (dict "key" "checkIntervalSecs" "name" "STUCK_SCAN_CHECK_INTERVAL_SECS") -}}
+{{- $path := printf "backend.stuckScan.%s" $item.key -}}
+{{- if and (hasKey $stuck $item.key) (not (kindIs "invalid" (get $stuck $item.key))) -}}
+{{- $value := get $stuck $item.key -}}
+{{- $valid := false -}}
+{{- if or (kindIs "int" $value) (kindIs "int64" $value) (kindIs "float64" $value) -}}
+{{- $valid = and (gt (float64 $value) 0.0) (eq (float64 (int64 $value)) (float64 $value)) -}}
+{{- else if kindIs "string" $value -}}
+{{- $valid = regexMatch "^[1-9][0-9]{0,9}$" $value -}}
+{{- end -}}
+{{- if not $valid -}}
+{{- fail (printf "%s must be a positive integer number of seconds or null; got %v" $path $value) -}}
+{{- end -}}
+{{- $vars = append $vars (dict "name" $item.name "value" (printf "%d" (int64 $value)) "path" $path) -}}
+{{- end -}}
+{{- end -}}
+{{- $secretEnv := list -}}
+{{- range $backend.environmentSecrets -}}
+{{- $secretEnv = append $secretEnv .name -}}
+{{- end -}}
+{{- range $vars -}}
+{{- if has .name $secretEnv -}}
+{{- fail (printf "%s is set by %s and also by backend.environmentSecrets; remove one" .name .path) -}}
+{{- end -}}
+{{- if hasKey $env .name -}}
+{{- if ne (toString (get $env .name)) .value -}}
+{{- fail (printf "backend.env.%s (%v) conflicts with %s (%s): remove the backend.env entry or set both to the same value" .name (get $env .name) .path .value) -}}
+{{- end -}}
+{{- else }}
+- name: {{ .name }}
+  value: {{ .value | quote }}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -455,6 +774,12 @@ Preset sizing table keyed on fleet.preset (small|medium|large). Returns YAML
 for the selected preset with backend/web replica counts and resource blocks.
 Presets are chart-owned so an instance spec only carries the preset name.
 An empty preset falls back to small; any other value fails the render.
+
+Every preset gives the backend a 16Gi ephemeral-storage limit, matching the
+non-fleet backend.resources default raised in #116: with persistence off the
+backend's scratch volumes can grow to about 12Gi, and a smaller limit gets the
+pod evicted mid-operation (#350). Requests stay small so scheduling is not
+affected; the web limits are unchanged.
 */}}
 {{- define "artifact-keeper.fleet.presetSpec" -}}
 {{- $preset := default "small" .Values.fleet.preset -}}
@@ -464,7 +789,7 @@ An empty preset falls back to small; any other value fails the render.
     "webReplicas" 1
     "backend" (dict
       "requests" (dict "cpu" "250m" "memory" "512Mi" "ephemeral-storage" "256Mi")
-      "limits" (dict "cpu" "1" "memory" "1Gi" "ephemeral-storage" "1Gi"))
+      "limits" (dict "cpu" "1" "memory" "1Gi" "ephemeral-storage" "16Gi"))
     "web" (dict
       "requests" (dict "cpu" "100m" "memory" "128Mi" "ephemeral-storage" "128Mi")
       "limits" (dict "cpu" "500m" "memory" "512Mi" "ephemeral-storage" "1Gi")))
@@ -473,7 +798,7 @@ An empty preset falls back to small; any other value fails the render.
     "webReplicas" 2
     "backend" (dict
       "requests" (dict "cpu" "500m" "memory" "1Gi" "ephemeral-storage" "512Mi")
-      "limits" (dict "cpu" "2" "memory" "2Gi" "ephemeral-storage" "2Gi"))
+      "limits" (dict "cpu" "2" "memory" "2Gi" "ephemeral-storage" "16Gi"))
     "web" (dict
       "requests" (dict "cpu" "250m" "memory" "256Mi" "ephemeral-storage" "256Mi")
       "limits" (dict "cpu" "1" "memory" "1Gi" "ephemeral-storage" "2Gi")))
@@ -482,7 +807,7 @@ An empty preset falls back to small; any other value fails the render.
     "webReplicas" 2
     "backend" (dict
       "requests" (dict "cpu" "1" "memory" "2Gi" "ephemeral-storage" "1Gi")
-      "limits" (dict "cpu" "4" "memory" "4Gi" "ephemeral-storage" "4Gi"))
+      "limits" (dict "cpu" "4" "memory" "4Gi" "ephemeral-storage" "16Gi"))
     "web" (dict
       "requests" (dict "cpu" "500m" "memory" "512Mi" "ephemeral-storage" "512Mi")
       "limits" (dict "cpu" "2" "memory" "2Gi" "ephemeral-storage" "2Gi")))
@@ -772,9 +1097,43 @@ which feeds the Ingress and the Gateway API HTTPRoute) and by the OpenShift
 Routes (route.yaml) via `splitList " " (trim ...)`, so they never drift out of
 sync. Does NOT include /api, /v2, /health, or /ready — those carry their own
 pathType/handling (see artifact-keeper.backendPaths and route.yaml).
+
+Keep this in step with the `format_routes` nests in the backend's
+backend/src/api/routes.rs. /lxc is the incus alias, /general the generic
+format, and /t the rattler/pixi conda-token prefix (/t/<token>/conda/...).
+tests/test_httproute.py holds an independent copy of this inventory.
+
+backend.extraFormatPaths (#359) appends operator-supplied prefixes, for example
+for a backend plugin, after the built-in list so every consumer picks them up.
+Each must be a single path segment ("/" plus lowercase letters, digits and
+inner hyphens): the OpenShift Route for a path is named after it. Built-in
+prefixes, the other backend paths, /metrics (kept private), /dtrack and
+duplicates fail the render.
 */}}
 {{- define "artifact-keeper.backendFormatPaths" -}}
-/maven /npm /pypi /nuget /cargo /gems /go /helm /debian /rpm /alpine /composer /conan /conda /swift /terraform /cocoapods /hex /pub /lfs /ivy /chef /puppet /ansible /cran /huggingface /jetbrains /vscode /proto /incus /ext
+{{- $builtin := list "/general" "/maven" "/npm" "/pypi" "/nuget" "/cargo" "/gems" "/go" "/helm" "/debian" "/rpm" "/alpine" "/pacman" "/composer" "/conan" "/conda" "/t" "/swift" "/terraform" "/cocoapods" "/hex" "/pub" "/lfs" "/ivy" "/chef" "/puppet" "/ansible" "/cran" "/bazel" "/huggingface" "/jetbrains" "/vscode" "/proto" "/incus" "/lxc" "/ext" -}}
+{{- /* dig: `helm upgrade --reuse-values` keeps the previous chart's
+       defaults, which lack this key. */ -}}
+{{- $extra := dig "extraFormatPaths" list .Values.backend -}}
+{{- if kindIs "invalid" $extra -}}{{- $extra = list -}}{{- end -}}
+{{- if not (kindIs "slice" $extra) -}}
+{{- fail "backend.extraFormatPaths must be a list of path prefixes such as \"/myplugin\"" -}}
+{{- end -}}
+{{- $reserved := concat $builtin (list "/" "/api" "/v2" "/health" "/ready" "/metrics" "/dtrack") -}}
+{{- $paths := $builtin -}}
+{{- range $extra -}}
+{{- if not (and (kindIs "string" .) (regexMatch "^/[a-z0-9]([-a-z0-9]*[a-z0-9])?$" .)) -}}
+{{- fail (printf "backend.extraFormatPaths entry %q must be a single path segment: \"/\" followed by lowercase letters, digits and inner hyphens, with no spaces or further \"/\"" (toString .)) -}}
+{{- end -}}
+{{- if has . $reserved -}}
+{{- fail (printf "backend.extraFormatPaths entry %q is reserved: it is a built-in backend path, /metrics (kept private) or /dtrack; remove it" .) -}}
+{{- end -}}
+{{- if has . $paths -}}
+{{- fail (printf "backend.extraFormatPaths lists %q more than once" .) -}}
+{{- end -}}
+{{- $paths = append $paths . -}}
+{{- end -}}
+{{- join " " $paths -}}
 {{- end -}}
 
 {{/*
@@ -849,6 +1208,29 @@ networkPolicy.ingressNamespace.
 {{- end -}}
 
 {{/*
+NetworkPolicy `from` peers admitted to the Prometheus scrape ports of the
+backend, web and edge policies. networkPolicy.monitoringPeers, when non-empty,
+is rendered verbatim (for example a podSelector for the Prometheus pods).
+Empty keeps the namespace peer: every pod in networkPolicy.monitoringNamespace,
+matched on the kubernetes.io/metadata.name label Kubernetes stamps on every
+namespace (a bare `name` label matches nothing).
+*/}}
+{{- define "artifact-keeper.networkPolicy.monitoringPeers" -}}
+{{- /* dig: `helm upgrade --reuse-values` keeps the previous chart's defaults, which lack these keys. */ -}}
+{{- $namespace := dig "monitoringNamespace" "monitoring" .Values.networkPolicy -}}
+{{- if .Values.networkPolicy.monitoringPeers -}}
+{{- toYaml .Values.networkPolicy.monitoringPeers -}}
+{{- else -}}
+{{- if not $namespace -}}
+{{- fail "networkPolicy.monitoringNamespace must name the namespace Prometheus runs in (default monitoring), or set networkPolicy.monitoringPeers" -}}
+{{- end }}
+- namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: {{ $namespace | quote }}
+{{- end -}}
+{{- end -}}
+
+{{/*
 DNS egress ports (UDP and TCP for each entry of networkPolicy.dnsPorts). An
 empty list would leave the DNS egress rule with no ports, which allows ALL
 egress, so it is rejected. OpenShift needs 5353: dns-default maps service port 53 to pod port
@@ -864,5 +1246,131 @@ egress, so it is rejected. OpenShift needs 5353: dns-default maps service port 5
   protocol: UDP
 - port: {{ $p }}
   protocol: TCP
+{{- end -}}
+{{- end -}}
+
+{{/*
+=============================================================================
+Egress proxy helpers
+=============================================================================
+*/}}
+
+{{/*
+Returns "true" when the bare "backend" ExternalName alias
+(backend-alias-service.yaml) renders: backend and web enabled and
+web.backendAlias.enabled not false. `dig` keeps the alias for
+`helm upgrade --reuse-values` from a chart that predates the knob.
+*/}}
+{{- define "artifact-keeper.backendAlias.enabled" -}}
+{{- $enabled := dig "backendAlias" "enabled" true .Values.web -}}
+{{- if not (kindIs "bool" $enabled) -}}
+{{- fail "web.backendAlias.enabled must be a boolean" -}}
+{{- end -}}
+{{- if and .Values.backend.enabled .Values.web.enabled $enabled -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+NO_PROXY defaults: loopback, in-cluster DNS suffixes, and the short Service name
+of every enabled component. The bare names matter — a ".svc"/".cluster.local"
+suffix match misses "artifact-keeper-backend", which is how components call each
+other, so those hops would otherwise take the proxy. The bare "backend" entry is
+the ExternalName alias from backend-alias-service.yaml (web images before 1.1.0
+bake http://backend:8080 into their rewrites), rendered under the same condition.
+Fleet mode: the shared search/scan/DB Services live outside the release; add
+them via noProxy, as you must any in-cluster S3 endpoint (e.g. MinIO).
+*/}}
+{{- define "artifact-keeper.noProxyDefaults" -}}
+{{- $full := include "artifact-keeper.fullname" . -}}
+{{- $n := list "localhost" "127.0.0.1" ".svc" ".svc.cluster.local" ".cluster.local" -}}
+{{- $n = append $n (printf "%s-backend" $full) -}}
+{{- if eq (include "artifact-keeper.backendAlias.enabled" .) "true" -}}{{- $n = append $n "backend" -}}{{- end -}}
+{{- $n = append $n (printf "%s-web" $full) -}}
+{{- if .Values.edge.enabled -}}{{- $n = append $n (printf "%s-edge" $full) -}}{{- end -}}
+{{- if .Values.opensearch.enabled -}}{{- $n = append $n (printf "%s-opensearch" $full) -}}{{- end -}}
+{{- if .Values.trivy.enabled -}}{{- $n = append $n (printf "%s-trivy" $full) -}}{{- end -}}
+{{- if .Values.scannerAdapter.enabled -}}{{- $n = append $n (printf "%s-scanner-adapter" $full) -}}{{- end -}}
+{{- if .Values.dependencyTrack.enabled -}}{{- $n = append $n (printf "%s-dtrack" $full) -}}{{- end -}}
+{{- if .Values.imageBuilder.enabled -}}{{- $n = append $n (printf "%s-buildkitd" $full) -}}{{- end -}}
+{{- if .Values.postgres.enabled -}}{{- $n = append $n (printf "%s-postgres" $full) -}}{{- else if .Values.externalDatabase.host -}}{{- $n = append $n .Values.externalDatabase.host -}}{{- end -}}
+{{- join "," $n -}}
+{{- end -}}
+
+{{/*
+Effective proxy settings for one component, resolved field by field: a value
+under <component>.proxy wins over the same field of global.proxy. Returns YAML:
+  enabled        false when the component opted out (proxy.enabled: false) or
+                 nothing resolves (no literal URL and no existingSecret)
+  httpProxy      literal HTTP_PROXY URL, "" when unset
+  httpsProxy     literal HTTPS_PROXY URL, "" when unset
+  existingSecret Secret whose HTTP_PROXY / HTTPS_PROXY keys supply whichever
+                 of the two has no literal URL, "" when unset
+  noProxy        noProxyDefaults + global.proxy.noProxy + <component>.proxy.noProxy
+                 (the component list extends the global one, it does not replace it)
+Call: include "artifact-keeper.proxyConfig" (dict "proxy" .Values.<component>.proxy "ctx" $) | fromYaml
+*/}}
+{{- define "artifact-keeper.proxyConfig" -}}
+{{- $svc := .proxy | default dict -}}
+{{- $global := dict -}}
+{{- if .ctx.Values.global -}}{{- $global = .ctx.Values.global.proxy | default dict -}}{{- end -}}
+{{- $httpProxy := or $svc.httpProxy $global.httpProxy "" -}}
+{{- $httpsProxy := or $svc.httpsProxy $global.httpsProxy "" -}}
+{{- $secret := or $svc.existingSecret $global.existingSecret "" -}}
+{{- $enabled := and (ne (toString $svc.enabled) "false") (or $httpProxy $httpsProxy $secret) -}}
+{{- $noProxy := list (include "artifact-keeper.noProxyDefaults" .ctx) -}}
+{{- with $global.noProxy -}}{{- $noProxy = append $noProxy . -}}{{- end -}}
+{{- with $svc.noProxy -}}{{- $noProxy = append $noProxy . -}}{{- end -}}
+{{- dict "enabled" (not (empty $enabled)) "httpProxy" $httpProxy "httpsProxy" $httpsProxy "existingSecret" $secret "noProxy" (join "," $noProxy) | toYaml -}}
+{{- end -}}
+
+{{/*
+The env var names artifact-keeper.proxyEnv emits for a component, space
+separated ("" when it emits nothing). Templates that also render a free-form
+<component>.env map skip these keys so the variable is not defined twice.
+Call: splitList " " (include "artifact-keeper.proxyEnvNames" (dict "proxy" .Values.<component>.proxy "ctx" $))
+*/}}
+{{- define "artifact-keeper.proxyEnvNames" -}}
+{{- $p := include "artifact-keeper.proxyConfig" . | fromYaml -}}
+{{- if $p.enabled -}}
+{{- $names := list -}}
+{{- if or $p.httpProxy $p.existingSecret -}}{{- $names = concat $names (list "HTTP_PROXY" "http_proxy") -}}{{- end -}}
+{{- if or $p.httpsProxy $p.existingSecret -}}{{- $names = concat $names (list "HTTPS_PROXY" "https_proxy") -}}{{- end -}}
+{{- $names = concat $names (list "NO_PROXY" "no_proxy") -}}
+{{- join " " $names -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Proxy env for a container, from artifact-keeper.proxyConfig. Emits nothing
+unless the component resolves to a proxy; proxy.enabled: false opts a component
+out even when global.proxy is set (with proxy-only egress that leaves it no
+route out of the cluster; in-cluster + DNS still work via NO_PROXY). Emits
+upper- and lower-case forms. A literal URL renders as `value`; a field that
+only existingSecret supplies renders as a secretKeyRef to that key.
+Call: include "artifact-keeper.proxyEnv" (dict "proxy" .Values.<component>.proxy "ctx" $)
+*/}}
+{{- define "artifact-keeper.proxyEnv" -}}
+{{- $p := include "artifact-keeper.proxyConfig" . | fromYaml -}}
+{{- if $p.enabled -}}
+{{- range $pair := list (list "HTTP_PROXY" $p.httpProxy) (list "HTTPS_PROXY" $p.httpsProxy) -}}
+{{- $key := index $pair 0 -}}
+{{- $literal := index $pair 1 -}}
+{{- if or $literal $p.existingSecret -}}
+{{- range $name := list $key (lower $key) }}
+- name: {{ $name }}
+{{- if $literal }}
+  value: {{ $literal | quote }}
+{{- else }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ $p.existingSecret }}
+      key: {{ $key }}
+{{- end }}
+{{- end }}
+{{- end -}}
+{{- end }}
+- name: NO_PROXY
+  value: {{ $p.noProxy | quote }}
+- name: no_proxy
+  value: {{ $p.noProxy | quote }}
 {{- end -}}
 {{- end -}}

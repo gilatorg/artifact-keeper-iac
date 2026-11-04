@@ -122,6 +122,9 @@ spec:
               containerPort: 9300
               protocol: TCP
           env:
+            {{- with (include "artifact-keeper.proxyEnv" (dict "proxy" .Values.opensearch.proxy "ctx" $)) }}
+            {{- . | trim | nindent 12 }}
+            {{- end }}
             - name: cluster.name
               value: {{ .Values.opensearch.clusterName | quote }}
             - name: node.name
@@ -188,12 +191,16 @@ spec:
         {{- else if $singleNode }}
         - name: opensearch-data
           persistentVolumeClaim:
-            claimName: {{ $fullName }}-opensearch
+            claimName: {{ .Values.opensearch.persistence.existingClaim | default (printf "%s-opensearch" $fullName) }}
         {{- end }}
   {{- if not $singleNode }}
   volumeClaimTemplates:
     - metadata:
         name: opensearch-data
+        {{- with .Values.opensearch.persistence.annotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
       spec:
         accessModes:
           - ReadWriteOnce
@@ -204,7 +211,7 @@ spec:
         storageClassName: {{ .Values.opensearch.persistence.storageClass | quote }}
         {{- end }}
   {{- end }}
-{{- if and $singleNode .Values.opensearch.persistence.enabled }}
+{{- if and $singleNode .Values.opensearch.persistence.enabled (not .Values.opensearch.persistence.existingClaim) }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -213,6 +220,10 @@ metadata:
   labels:
     {{- include "artifact-keeper.labels" . | nindent 4 }}
     app.kubernetes.io/component: opensearch
+  {{- with .Values.opensearch.persistence.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   accessModes:
     - ReadWriteOnce

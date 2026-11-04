@@ -15,6 +15,10 @@ metadata:
   labels:
     {{- include "artifact-keeper.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
+  {{- with .Values.postgres.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   serviceName: {{ include "artifact-keeper.fullname" . }}-postgres
   replicas: 1
@@ -25,6 +29,10 @@ spec:
     metadata:
       labels:
         {{- include "artifact-keeper.postgres.selectorLabels" . | nindent 8 }}
+      {{- with .Values.postgres.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       {{- with (.Values.postgres.tolerations | default .Values.global.tolerations) }}
       tolerations:
@@ -105,17 +113,29 @@ spec:
               mountPath: /docker-entrypoint-initdb.d
               readOnly: true
             {{- end }}
-      {{- if .Values.postgres.initDb.enabled }}
+      {{- if or .Values.postgres.initDb.enabled .Values.postgres.persistence.existingClaim }}
       volumes:
+        {{- if .Values.postgres.initDb.enabled }}
         - name: init-db
           configMap:
             name: {{ include "artifact-keeper.fullname" . }}-init-db
+        {{- end }}
+        {{- with .Values.postgres.persistence.existingClaim }}
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: {{ . }}
+        {{- end }}
       {{- end }}
+  {{- if not .Values.postgres.persistence.existingClaim }}
   volumeClaimTemplates:
     - metadata:
         name: postgres-data
         labels:
           {{- include "artifact-keeper.postgres.selectorLabels" . | nindent 10 }}
+        {{- with .Values.postgres.persistence.annotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
       spec:
         accessModes:
           - ReadWriteOnce
@@ -125,6 +145,7 @@ spec:
         {{- if .Values.postgres.persistence.storageClass }}
         storageClassName: {{ .Values.postgres.persistence.storageClass | quote }}
         {{- end }}
+  {{- end }}
 ---
 apiVersion: v1
 kind: Service

@@ -1,20 +1,20 @@
 # artifact-keeper
 
-![Version: 1.15.0](https://img.shields.io/badge/Version-1.15.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.10.1](https://img.shields.io/badge/AppVersion-1.10.1-informational?style=flat-square)
+![Version: 1.16.0](https://img.shields.io/badge/Version-1.16.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.11.11](https://img.shields.io/badge/AppVersion-1.11.11-informational?style=flat-square)
 
 ## TL;DR
 
-Install from a cloned checkout:
-
 ```bash
-git clone https://github.com/artifact-keeper/artifact-keeper-iac.git
-cd artifact-keeper-iac
-helm install ak charts/artifact-keeper/ \
+helm repo add artifact-keeper https://artifact-keeper.github.io/artifact-keeper-iac/
+helm repo update
+helm install ak artifact-keeper/artifact-keeper \
   --namespace artifact-keeper \
   --create-namespace
 ```
 
-A published Helm repository at `https://artifact-keeper.github.io/artifact-keeper-iac/` is planned but not yet live. See [issue #51](https://github.com/artifact-keeper/artifact-keeper-iac/issues/51) for tracking.
+To install from a cloned checkout instead, use `helm install ak charts/artifact-keeper/` in place of `artifact-keeper/artifact-keeper`.
+
+No values are required: the chart generates the JWT secret and the Postgres password. If you deploy with Argo CD or plain `helm template`, read [Generated credentials](#generated-credentials) first.
 
 ## Introduction
 
@@ -33,7 +33,7 @@ The chart and backend versions must match. The current chart on `main` deploys O
 
 For deployments running backend v1.1.x, pin the chart to a tag matching that line. Mixing chart `main` with backend `:1.1-dev` will fail at startup because the backend will not find an OpenSearch endpoint.
 
-Tracking issues: chart release tags are coordinated in [#74](https://github.com/artifact-keeper/artifact-keeper-iac/issues/74), and a published Helm repository is tracked in [#51](https://github.com/artifact-keeper/artifact-keeper-iac/issues/51).
+Tracking issues: chart release tags are coordinated in [#74](https://github.com/artifact-keeper/artifact-keeper-iac/issues/74).
 
 ## Prerequisites
 
@@ -61,7 +61,15 @@ helm install ak charts/artifact-keeper/ \
   --create-namespace
 ```
 
-A published Helm repository at `https://artifact-keeper.github.io/artifact-keeper-iac/` is planned but not yet live (see [issue #51](https://github.com/artifact-keeper/artifact-keeper-iac/issues/51)). Once published, the equivalent install command will be `helm install ak artifact-keeper/artifact-keeper`.
+The chart is also published to a Helm repository:
+
+```bash
+helm repo add artifact-keeper https://artifact-keeper.github.io/artifact-keeper-iac/
+helm repo update
+helm install ak artifact-keeper/artifact-keeper \
+  --namespace artifact-keeper \
+  --create-namespace
+```
 
 If you are running backend v1.1.x, do not install from `main`. See the [Compatibility Matrix](#compatibility-matrix) above for chart/backend version pairing.
 
@@ -83,45 +91,77 @@ kubectl delete pvc -l app.kubernetes.io/instance=ak -n artifact-keeper
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| backend | object | `{"affinity":{},"allowHttpIntegrations":"auto","autoscaling":{"enabled":false,"maxReplicas":10,"minReplicas":2,"targetCPUUtilization":70,"targetMemoryUtilization":80},"containerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"enabled":true,"env":{"ADMIN_PASSWORD":"","BACKUP_PATH":"/data/backups","ENVIRONMENT":"development","HOST":"0.0.0.0","PLUGINS_DIR":"/data/plugins","PORT":"8080","RATE_LIMIT_TRUSTED_PROXY_CIDRS":"10.0.0.0/8,172.16.0.0/12,192.168.0.0/16","RUST_LOG":"info,artifact_keeper=debug","STORAGE_PATH":"/data/storage"},"environmentSecrets":[],"extraEnvFrom":[],"image":{"pullPolicy":"Always","repository":"ghcr.io/artifact-keeper/artifact-keeper-backend","tag":"1.10.1"},"initContainerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"livenessProbe":{"failureThreshold":5,"httpGet":{"path":"/livez","port":"http"},"periodSeconds":15,"timeoutSeconds":5},"metricsListener":{"enabled":false,"port":9091},"nodeSelector":{},"persistence":{"accessModes":[],"enabled":true,"size":"10Gi","storageClass":""},"podDisruptionBudget":{"enabled":false,"minAvailable":1},"podLabels":{},"podSecurityContext":{"fsGroup":0,"runAsNonRoot":true,"runAsUser":1001},"readinessProbe":{"failureThreshold":5,"httpGet":{"path":"/readyz","port":"http"},"periodSeconds":10,"timeoutSeconds":5},"replicaCount":1,"resources":{"limits":{"cpu":"2","ephemeral-storage":"16Gi","memory":"2Gi"},"requests":{"cpu":"250m","ephemeral-storage":"256Mi","memory":"256Mi"}},"scanWorkspace":{"enabled":true,"size":"2Gi"},"service":{"annotations":{},"grpcPort":9090,"httpPort":8080,"type":"ClusterIP"},"serviceAccount":{"annotations":{},"create":true,"name":""},"sharedConfig":{"accessModes":[],"storageClass":""},"startupProbe":{"failureThreshold":30,"httpGet":{"path":"/readyz","port":"http"},"periodSeconds":5,"timeoutSeconds":5},"strategy":{"type":"Recreate"},"tolerations":[],"topologySpreadConstraints":[],"waitForOpenSearch":{"image":{"repository":"alpine","tag":"3.20"}}}` | Backend API server The backend handles all API requests, format-specific wire protocols, and artifact storage. It runs as a single Rust binary (Axum). |
+| backend | object | `{"affinity":{},"allowCredentialsInEnv":false,"allowHttpIntegrations":"auto","annotations":{},"autoscaling":{"enabled":false,"maxReplicas":10,"minReplicas":2,"targetCPUUtilization":70,"targetMemoryUtilization":80},"clientIp":{"trustedProxyCidrs":"","xffTrustedForAuthz":false},"containerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"enabled":true,"env":{"ADMIN_PASSWORD":"","BACKUP_PATH":"/data/backups","ENVIRONMENT":"development","HOST":"0.0.0.0","PLUGINS_DIR":"/data/plugins","PORT":"8080","RUST_LOG":"info,artifact_keeper=debug","STORAGE_PATH":"/data/storage"},"environmentSecrets":[],"extraEnvFrom":[],"extraFormatPaths":[],"extraVolumeMounts":[],"extraVolumes":[],"image":{"pullPolicy":"Always","repository":"ghcr.io/artifact-keeper/artifact-keeper-backend","tag":"1.11.10"},"initContainerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"livenessProbe":{"failureThreshold":5,"httpGet":{"path":"/livez","port":"http"},"periodSeconds":15,"timeoutSeconds":5},"logging":{"ansi":"auto","format":"text"},"metricsListener":{"bindIP":"","enabled":false,"port":9091},"nodeSelector":{},"persistence":{"accessModes":[],"annotations":{},"emptyDir":{"sizeLimit":"10Gi"},"enabled":true,"ephemeral":{"accessModes":["ReadWriteOnce"],"enabled":false,"size":"10Gi","storageClass":""},"existingClaim":"","size":"10Gi","storageClass":""},"podAnnotations":{},"podDisruptionBudget":{"enabled":false,"minAvailable":1},"podLabels":{},"podSecurityContext":{"fsGroup":0,"runAsNonRoot":true,"runAsUser":1001},"proxy":{"enabled":true,"existingSecret":"","httpProxy":"","httpsProxy":"","noProxy":""},"readinessProbe":{"failureThreshold":5,"httpGet":{"path":"/readyz","port":"http"},"periodSeconds":10,"timeoutSeconds":5},"replicaCount":1,"resources":{"limits":{"cpu":"2","ephemeral-storage":"16Gi","memory":"2Gi"},"requests":{"cpu":"250m","ephemeral-storage":"256Mi","memory":"256Mi"}},"scanWorkspace":{"annotations":{},"enabled":true,"existingClaim":"","size":"2Gi"},"service":{"annotations":{},"grpcPort":9090,"httpPort":8080,"type":"ClusterIP"},"serviceAccount":{"annotations":{},"create":true,"name":""},"sharedConfig":{"accessModes":[],"annotations":{},"existingClaim":"","storageClass":""},"startupProbe":{"failureThreshold":30,"httpGet":{"path":"/readyz","port":"http"},"periodSeconds":5,"timeoutSeconds":5},"strategy":{"type":"Recreate"},"stuckScan":{"checkIntervalSecs":null,"thresholdSecs":null},"tolerations":[],"topologySpreadConstraints":[],"waitForOpenSearch":{"image":{"repository":"alpine","tag":"3.20"}}}` | Backend API server The backend handles all API requests, format-specific wire protocols, and artifact storage. It runs as a single Rust binary (Axum). |
+| backend.allowCredentialsInEnv | bool | `false` | Accept credentials in `backend.env`. By default the render fails when `backend.env` sets a non-empty ADMIN_PASSWORD, INITIAL_ADMIN_PASSWORD, JWT_SECRET, S3_SECRET_ACCESS_KEY (or S3_SECRET_KEY), DATABASE_URL with a password, DEPENDENCY_TRACK_API_KEY, OPENSEARCH_PASSWORD, OIDC_CLIENT_SECRET, LDAP_BIND_PASSWORD, SMTP_PASSWORD, PEER_API_KEY, EDGE_API_KEY, GITHUB_TOKEN, Azure/GCS/CloudFront keys or an encryption key, because the value would be readable in plain text by anyone who can get the Deployment, its pods or the Helm release. true renders them anyway, with a NOTES.txt warning. Only for throwaway test installs (the smoke, CI and mesh-test profiles set it). |
 | backend.allowHttpIntegrations | string | `"auto"` | Controls whether the backend may make plain-HTTP outbound integration calls (the ALLOW_HTTP_INTEGRATIONS env var). This weakens outbound TLS posture for EVERY integration the backend talks to, not just the bundled Dependency-Track, so think of it as a cluster-wide relaxation.   "auto"  (default): set ALLOW_HTTP_INTEGRATIONS=1 only when           dependencyTrack.enabled is true, because the bundled           Dependency-Track is reached over plain HTTP in-cluster and the           integration fails without it. A warning is printed in the           install notes whenever the variable is active.   "true":  always set ALLOW_HTTP_INTEGRATIONS=1.   "false": never set it. Note the bundled Dependency-Track integration           will not work unless you put TLS in front of it. An explicit ALLOW_HTTP_INTEGRATIONS entry in backend.env above overrides this setting entirely. |
-| backend.env.RATE_LIMIT_TRUSTED_PROXY_CIDRS | string | `"10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"` | Rate Limiting RATE_LIMIT_TRUSTED_PROXY_CIDRS — CIDR(s), comma-separated, of the reverse proxy / ingress that sits in front of the backend. The login rate limiter keys on (username, client-IP) and only believes the X-Forwarded-For header when the request's TCP peer falls inside one of these ranges; otherwise it keys on the raw TCP peer. In Kubernetes the backend is reached through an ingress controller (ingress-nginx by default), so its TCP peer is ALWAYS the ingress/proxy pod IP. Leaving this empty makes the backend key every client on that single proxy pod IP → one shared login bucket per account → a single flooding client can targeted-lock-out any user (including owner break-glass) with ~10 requests / 15 min (iac#207, ak#2298). The default trusts the standard RFC1918 private pod-network ranges so per-client keying on the real client IP works out of the box behind an in-cluster proxy. TIGHTEN this to your ingress controller's actual pod CIDR for defense-in-depth, or set it to "" only when the backend is reached directly (no proxy) so ConnectInfo already carries the real client IP. |
-| backend.environmentSecrets | list | `[]` | Extra environment variables sourced from existing Kubernetes Secrets. Use this for values that must not appear in plain text in `backend.env` (e.g. an initial ADMIN_PASSWORD provisioned out-of-band, or OTEL_EXPORTER_OTLP_HEADERS carrying an auth token). Each entry maps a container env var name to a Secret key reference. When an entry names a variable that also appears in `backend.env`, remove the plain-text key (set it to null) so the secret-sourced value is the only definition. For MIGRATION_ENCRYPTION_KEY and AK_WEBHOOK_SECRET_KEY, also leave the corresponding secrets.* value empty and *Enabled flag false (or the externalSecrets.secrets.* path empty); duplicate definitions fail rendering. environmentSecrets:   - name: ADMIN_PASSWORD     secretKeyRef:       name: ak-admin-credentials       key: ADMIN_PASSWORD |
+| backend.annotations | object | `{}` | Annotations added to the backend Deployment metadata, for operators that watch workload annotations such as Stakater Reloader (reloader.stakater.com/auto: "true") to restart pods when a referenced Secret or ConfigMap changes (#344). |
+| backend.clientIp | object | `{"trustedProxyCidrs":"","xffTrustedForAuthz":false}` | Client-IP resolution behind a reverse proxy (ingress controller or Gateway). Explicit RATE_LIMIT_TRUSTED_PROXY_CIDRS / XFF_TRUSTED_FOR_AUTHZ entries in backend.env win over these values. |
+| backend.clientIp.trustedProxyCidrs | string | `""` | CIDR(s), comma-separated, of the proxy pods in front of the backend, rendered as RATE_LIMIT_TRUSTED_PROXY_CIDRS. The backend believes X-Forwarded-For only when the TCP peer is inside one of these ranges, and only those peers may set an inbound W3C `traceparent` (1.11.0+). Set it to your ingress controller's or Gateway proxy's pod CIDR, for example "10.1.42.0/24", and never to a range that covers other workloads: any pod inside it can claim any client IP. Empty (the default since chart 1.11.1) trusts no proxy. The backend then keys rate limits on the TCP peer, so every client behind one proxy pod shares a single API bucket, and accepts `traceparent` from any client. Login limiting does not depend on it: logins are limited per user and IP with a per-user lockout and a global backstop, so an empty list does not let one client lock out other users. Chart 1.9.28 and earlier defaulted to all RFC1918 ranges, which trusts every pod in the cluster. |
+| backend.clientIp.xffTrustedForAuthz | bool | `false` | Rendered as XFF_TRUSTED_FOR_AUTHZ (backend 1.11.1+). When false (the backend default), a request whose TCP peer is a trusted proxy has an unknown client IP for `allowed_cidrs` permission conditions (they do not match, so IP-conditioned grants are denied) and for audit attribution. Set true only when EVERY proxy in trustedProxyCidrs appends the address it received the request from to X-Forwarded-For, all the way to the edge. A proxy that passes a client-supplied header through unchanged makes the client IP forgeable. Behind SNAT or a load balancer that hides the client before the first proxy, no setting recovers the real address. |
+| backend.environmentSecrets | list | `[]` | Extra environment variables sourced from existing Kubernetes Secrets. This is the supported path for every credential the backend reads that the chart does not wire itself: ADMIN_PASSWORD, OIDC_CLIENT_SECRET, LDAP_BIND_PASSWORD, PEER_API_KEY, DEPENDENCY_TRACK_API_KEY, cloud storage keys, OTEL_EXPORTER_OTLP_HEADERS with an auth token, and so on. `backend.env` is rendered in plain text into the pod spec, so the render fails when it carries a credential (see backend.allowCredentialsInEnv). Each entry maps a container env var name to a Secret key reference. An entry wins over the same key in `backend.env` (the default `ADMIN_PASSWORD: ""` placeholder there needs no change). For MIGRATION_ENCRYPTION_KEY, AK_WEBHOOK_SECRET_KEY and SSO_ENCRYPTION_KEY, also leave the corresponding secrets.* value empty and *Enabled flag false (or the externalSecrets.secrets.* path empty); duplicate definitions fail rendering. Example (create the Secret first, for instance with `kubectl create secret generic ak-admin-credentials  --from-literal=ADMIN_PASSWORD="$(openssl rand -base64 24)"`): environmentSecrets:   - name: ADMIN_PASSWORD     secretKeyRef:       name: ak-admin-credentials       key: ADMIN_PASSWORD   - name: OIDC_CLIENT_SECRET     secretKeyRef:       name: ak-sso       key: client-secret |
 | backend.extraEnvFrom | list | `[]` | Additional envFrom sources (Secrets/ConfigMaps) for the backend container, rendered verbatim. Use for credentials that must come from existing Secrets. |
-| backend.image.tag | string | `"1.10.1"` | Backend image tag. Defaults to the backend's latest published release. The backend and web images release on independent cadences (see the IMAGE TAGS note at the top of this file), so each pins its own default here rather than sharing one number. Leave this empty ("") to fall back to the chart's appVersion instead, which is handy when you deliberately want a tagged chart release to drive the image tag. ArgoCD Image Updater pins tags to a digest automatically. For a floating tag such as "dev", set pullPolicy: Always so restarts pick up new builds. |
+| backend.extraFormatPaths | list | `[]` | Extra path prefixes routed to the backend, appended to the built-in package-format prefixes on the Ingress, the Gateway API HTTPRoute and the OpenShift Routes alike. Use it for a prefix the built-in list lacks, such as one served by a backend plugin. Each entry is a single path segment: "/" followed by lowercase letters, digits and inner hyphens (the OpenShift Route is named after it), for example "/myformat". Entries that repeat a built-in prefix (see artifact-keeper.backendFormatPaths in _helpers.tpl), /api, /v2, /health, /ready, /metrics, /dtrack or another entry fail the render. |
+| backend.extraVolumeMounts | list | `[]` | Additional Kubernetes volumeMounts appended to the backend container, rendered verbatim. Can reference extraVolumes or existing pod volumes. |
+| backend.extraVolumes | list | `[]` | Additional Kubernetes volumes appended to the backend pod, rendered verbatim. Use names that do not conflict with the chart's built-in volumes. |
+| backend.image.tag | string | `"1.11.10"` | Backend image tag. Defaults to the backend's latest published release. The backend and web images release on independent cadences (see the IMAGE TAGS note at the top of this file), so each pins its own default here rather than sharing one number. Leave this empty ("") to fall back to the chart's appVersion instead, which is handy when you deliberately want a tagged chart release to drive the image tag. ArgoCD Image Updater pins tags to a digest automatically. For a floating tag such as "dev", set pullPolicy: Always so restarts pick up new builds. |
 | backend.livenessProbe | object | `{"failureThreshold":5,"httpGet":{"path":"/livez","port":"http"},"periodSeconds":15,"timeoutSeconds":5}` | Backend liveness probe. Defaults as hardcoded previously. |
-| backend.metricsListener | object | `{"enabled":false,"port":9091}` | Unauthenticated Prometheus metrics listener. When enabled, the backend starts a second TCP listener on `metricsPort` serving only `GET /metrics` with no authentication. Intended for Prometheus scrapers that cannot present credentials. Disabled by default.  |
+| backend.logging | object | `{"ansi":"auto","format":"text"}` | Diagnostics log settings (backend 1.11.2+). Field reference: docs/operations/logging.md in the artifact-keeper backend repository. Each value is rendered as its environment variable only when it differs from the backend default, so the defaults add nothing to the pod spec. A backend.env entry with the same name wins while the value here is left at its default, and must match it otherwise. |
+| backend.logging.ansi | string | `"auto"` | Rendered as LOG_ANSI: ANSI colour in the `text` format. `auto` (the default) colours only when stdout is a terminal, which a pod's stdout is not; `true` or `false` forces it, for example for `kubectl logs` against a TTY-attached debug container. Any other value fails the render. |
+| backend.logging.format | string | `"text"` | Rendered as LOG_FORMAT. `text` (the default) is the human-readable line format; `json` writes one flat JSON object per line with `method`, `uri`, `correlation_id`, `status`, `user`, `ip`, `latency_ms` and `http.route` as top-level keys, for Loki or SIEM rules. Any other value fails the render. |
+| backend.metricsListener | object | `{"bindIP":"","enabled":false,"port":9091}` | Unauthenticated Prometheus metrics listener. When enabled, the backend starts a second TCP listener on `metricsPort` serving only `GET /metrics` with no authentication. Intended for Prometheus scrapers that cannot present credentials. Disabled by default. `bindIP` renders METRICS_BIND_IP (1.11.0+): the listen IP for this listener. Empty leaves the backend default, 0.0.0.0 (every interface). Keep it reachable by Prometheus; 127.0.0.1 only suits a scraper sidecar in the same pod. An explicit METRICS_BIND_IP in backend.env wins.  |
 | backend.persistence.accessModes | list | `[]` | Access modes for the backend storage PVC. Defaults to ["ReadWriteOnce"] when unset/empty. Set to ["ReadWriteMany"] with a ReadWriteMany-capable storageClass (e.g. Azure Files) to let backend.replicaCount run >1 without every replica fighting over one zone-pinned RWO volume. This only frees the `storage` volume. The backend's other volumes stay ReadWriteOnce, so a multi-replica backend also needs `scanWorkspace.enabled: false` and, while `dependencyTrack.enabled` is true, a ReadWriteMany class for the `shared-config` PVC (`sharedConfig.accessModes` / `sharedConfig.storageClass` below). |
+| backend.persistence.annotations | object | `{}` | Annotations for the backend storage PVC the chart creates (ignored when `existingClaim` is set). For example `helm.sh/resource-policy: keep` to keep it on `helm uninstall`, or `argocd.argoproj.io/sync-options: Prune=false` so Argo CD never prunes it. |
+| backend.persistence.emptyDir | object | `{"sizeLimit":"10Gi"}` | Configuration for the per-pod emptyDir used when persistence is disabled and ephemeral.enabled is false. The size limit also counts against resources.limits.ephemeral-storage, so keep that container limit above this value with enough headroom for logs and the writable layer. |
+| backend.persistence.ephemeral | object | `{"accessModes":["ReadWriteOnce"],"enabled":false,"size":"10Gi","storageClass":""}` | Per-pod generic ephemeral volume used when persistence is disabled. This creates one PVC from volumeClaimTemplate for each backend pod and deletes it with the pod. It is suitable for upload scratch space in multi-replica deployments that keep artifacts in object storage. |
+| backend.persistence.existingClaim | string | `""` | Name of a pre-existing PersistentVolumeClaim to mount as the backend `storage` volume instead of the chart-created `<fullname>-storage` PVC. Requires `enabled: true` and cannot be combined with `ephemeral.enabled`. `size`, `storageClass`, `accessModes` and `annotations` are then unused; the claim needs ReadWriteMany for `replicaCount` > 1. See "Using pre-existing PersistentVolumeClaims" in the README. |
+| backend.podAnnotations | object | `{}` | Annotations added to the backend pod template, for example cluster-autoscaler.kubernetes.io/safe-to-evict: "false" to keep the autoscaler from draining the node under a running backend (#334). |
 | backend.podLabels | object | `{}` | Extra labels merged onto the backend pod template, in addition to the chart's own selector labels. Needed for label-driven admission webhooks such as AKS/GKE Workload Identity, which mutate a pod only when it carries a specific label (e.g. azure.workload.identity/use: "true") alongside a matching serviceAccount.annotations entry above. |
 | backend.podSecurityContext | object | `{"fsGroup":0,"runAsNonRoot":true,"runAsUser":1001}` | Pod-level securityContext. Defaults are image-native: the backend image bakes the Grype vulnerability DB at /home/artifact/.cache/grype with ownership 1001:0 and group-readable (see artifact-keeper docker/Dockerfile.backend). The pod must run as UID 1001, or as any UID whose primary group is GID 0 (the OpenShift arbitrary-UID model, where the backend image's data dirs are group-writable). Any other UID/GID combination makes Grype hit EACCES on the DB: fsGroup only chowns mounted volumes -- it does NOT touch the image's root filesystem.  If you are upgrading from chart <= 1.x where this defaulted to 1000:1000, your storage/scan-workspace PVCs will be recursively chowned on first remount because fsGroup changed. That takes ~1s per GiB of artifact data. See UPGRADE-NOTES.md. |
+| backend.proxy | object | `{"enabled":true,"existingSecret":"","httpProxy":"","httpsProxy":"","noProxy":""}` | Egress proxy for the backend: inherits global.proxy field by field. Set a field here to override it for the backend only; noProxy is appended to the global list. enabled: false keeps the backend (and its cosign init container) off the proxy entirely. The backend's S3 endpoint is not auto-detected: add an in-cluster MinIO host to noProxy yourself. |
 | backend.readinessProbe | object | `{"failureThreshold":5,"httpGet":{"path":"/readyz","port":"http"},"periodSeconds":10,"timeoutSeconds":5}` | Backend readiness probe. Defaults as hardcoded previously. |
-| backend.scanWorkspace | object | `{"enabled":true,"size":"2Gi"}` | Scratch space for security scans (SCAN_WORKSPACE_PATH=/scan-workspace, set whenever trivy.enabled). `enabled: true` backs it with a ReadWriteOnce PVC, which pins every backend replica to one node. Set it to false to give each pod its own emptyDir of `size` instead -- required for a multi-replica backend, and for `strategy.type: RollingUpdate` below. The workspace only holds per-scan temp files, so nothing is lost when a pod goes away; `size` then counts against the node's ephemeral-storage. Raise `resources.limits.ephemeral-storage` (16Gi by default) to at least `size` when you do this, otherwise the pod is evicted at the container limit before the emptyDir's own sizeLimit ever applies. |
+| backend.scanWorkspace | object | `{"annotations":{},"enabled":true,"existingClaim":"","size":"2Gi"}` | Scratch space for security scans (SCAN_WORKSPACE_PATH=/scan-workspace, set whenever trivy.enabled). `enabled: true` backs it with a ReadWriteOnce PVC, which pins every backend replica to one node. Set it to false to give each pod its own emptyDir of `size` instead -- required for a multi-replica backend, and for `strategy.type: RollingUpdate` below. The workspace only holds per-scan temp files, so nothing is lost when a pod goes away; `size` then counts against the node's ephemeral-storage. Raise `resources.limits.ephemeral-storage` (16Gi by default) to at least `size` when you do this, otherwise the pod is evicted at the container limit before the emptyDir's own sizeLimit ever applies. |
+| backend.scanWorkspace.annotations | object | `{}` | Annotations for the scan-workspace PVC the chart creates (ignored when `existingClaim` is set). For example `helm.sh/resource-policy: keep` to keep it on `helm uninstall`, or `argocd.argoproj.io/sync-options: Prune=false` so Argo CD never prunes it. |
+| backend.scanWorkspace.existingClaim | string | `""` | Name of a pre-existing PersistentVolumeClaim to mount at /scan-workspace instead of the chart-created `<fullname>-scan-workspace` PVC. Requires `enabled: true`; `size` and `annotations` are then unused. |
 | backend.service.annotations | object | `{}` | Extra annotations for the Service. Needed for AWS ALB with target-type=ip, whose default probe is `GET /` and would fail here:   alb.ingress.kubernetes.io/healthcheck-path: /readyz   alb.ingress.kubernetes.io/success-codes: "200" |
 | backend.sharedConfig.accessModes | list | `[]` | Access modes for the shared-config PVC. Defaults to ["ReadWriteOnce"] when unset/empty. Set to ["ReadWriteMany"] (with a class that supports it) so the backend and the Dependency-Track bootstrap Job can mount it from different nodes, and so a multi-replica backend or `strategy.type: RollingUpdate` works with Dependency-Track enabled. |
+| backend.sharedConfig.annotations | object | `{}` | Annotations for the shared-config PVC the chart creates (ignored when `existingClaim` is set). For example `helm.sh/resource-policy: keep` to keep it on `helm uninstall`, or `argocd.argoproj.io/sync-options: Prune=false` so Argo CD never prunes it. |
+| backend.sharedConfig.existingClaim | string | `""` | Name of a pre-existing PersistentVolumeClaim mounted as /shared by the backend and the Dependency-Track bootstrap Job, instead of the chart-created `<fullname>-shared-config` PVC. Only used while that PVC would be rendered (`dependencyTrack.enabled` without `dependencyTrack.existingApiKeySecret`). `storageClass`, `accessModes` and `annotations` are then unused. |
 | backend.sharedConfig.storageClass | string | `""` | Storage class for the shared-config PVC. Empty falls back to `persistence.storageClass`, and if that is empty too the cluster's default class is used. Set it on its own to put shared-config on a different class than the backend's block storage (e.g. a CephFS or NFS class that supports ReadWriteMany). |
 | backend.startupProbe | object | `{"failureThreshold":30,"httpGet":{"path":"/readyz","port":"http"},"periodSeconds":5,"timeoutSeconds":5}` | Backend startup probe. The values below are what this chart hardcoded before the key existed, so an install that does not set it is unchanged.  `failureThreshold` x `periodSeconds` is the whole budget the backend has to become ready, and schema migrations run inside it -- the backend does not listen while one is in flight. The default 30 x 5s = 150s is sized for a steady-state restart, NOT for an upgrade that carries a long migration (upstream migration 193, new in app 1.7.3, rebuilds the OCI index and can far exceed it on a large instance). A probe that fires mid-migration kills the pod, and the next pod restarts the same migration: a crash loop that never converges. Raise this BEFORE deploying an image that carries one -- Helm deep-merges values maps, so an install can override `failureThreshold` alone and keep the rest of this block. |
 | backend.strategy | object | `{"type":"Recreate"}` | Deployment update strategy for the backend.  `Recreate` (the default, and the behavior this chart hardcoded before the value existed) tears every old pod down before starting the new one. It is required whenever the backend holds a ReadWriteOnce PVC -- with `persistence.enabled: true` or `scanWorkspace.enabled: true` on an RWO storage class, a second pod cannot attach the same volume, so a rolling update wedges the new pod in ContainerCreating with a Multi-Attach error until the rollout times out. The cost is a hard gap in service on every image bump, chart change, or config-driven restart.  Set `type: RollingUpdate` for an upgrade with no gap. That is only safe when the backend owns no RWO volume, which means all three of its volumes have to be off or on a ReadWriteMany class:   - `storage`: keep artifacts in object storage     (`env.STORAGE_BACKEND: s3`) and set `persistence.enabled: false`.   - `scan-workspace`: `scanWorkspace.enabled: false` (scanning still     works; the workspace becomes a per-pod emptyDir).   - `shared-config`: only mounted when `dependencyTrack.enabled` is true     and `dependencyTrack.existingApiKeySecret` is empty -- the DT bootstrap     then hands the backend its API key through that PVC. Either supply     the key from a Secret with `dependencyTrack.existingApiKeySecret` to     drop the volume, or put it on a ReadWriteMany class with     `sharedConfig.accessModes: [ReadWriteMany]` and, if the default class     cannot do RWX, `sharedConfig.storageClass`. It also wants `replicaCount` (or `autoscaling.minReplicas`) >= 2, since a single replica still goes away while its one pod restarts. Pair it with `podDisruptionBudget.enabled: true` so node drains keep the same floor.  `rollingUpdate` is optional and passed through verbatim; it is only rendered when the type is RollingUpdate (the Deployment API rejects it under Recreate). Omit it to take Kubernetes' 25%/25% defaults. |
+| backend.stuckScan | object | `{"checkIntervalSecs":null,"thresholdSecs":null}` | Stuck-scan janitor, which reaps security scans left in `running` (for example by a backend pod that died mid-scan). Both values are null by default, which renders nothing and keeps the backend defaults. When set, each must be a positive integer; the backend clamps values below its floors (60 and 30 seconds). A backend.env entry with the same name must match the value here. |
+| backend.stuckScan.checkIntervalSecs | int | `nil` | Rendered as STUCK_SCAN_CHECK_INTERVAL_SECS: seconds between janitor sweeps (backend default 600). |
+| backend.stuckScan.thresholdSecs | int | `nil` | Rendered as STUCK_SCAN_THRESHOLD_SECS: seconds a scan may stay `running` before the janitor reaps it (backend default 1800). |
 | backend.tolerations | list | `[]` | Per-component scheduling (overrides global) |
-| backend.waitForOpenSearch | object | `{"image":{"repository":"alpine","tag":"3.20"}}` | wait-for-opensearch init container image. Override for airgapped mirrors. |
+| backend.waitForOpenSearch | object | `{"image":{"repository":"alpine","tag":"3.20"}}` | wait-for-opensearch init container image (only that container uses it). Override for airgapped mirrors. A replacement must provide /bin/sh and wget (the readiness check is a shell loop of `wget -qO-` against OpenSearch's _cluster/health, over HTTPS unless opensearch.disableSecurityPlugin), plus grep, date and sleep: any busybox- or alpine-compatible image works; distroless or scratch images do not. Runs with backend.initContainerSecurityContext. |
 | cosign | object | `{"certificateIdentityRegexp":"https://github.com/artifact-keeper/.*","certificateOidcIssuer":"https://token.actions.githubusercontent.com","enabled":false,"image":{"repository":"gcr.io/projectsigstore/cosign","tag":"v2.4.1"}}` | Cosign image signature verification When enabled, an init container verifies the backend image signature before the pod starts. Uses sigstore keyless verification (GitHub OIDC). |
-| dependencyTrack | object | `{"adminPassword":"","affinity":{},"bootstrap":{"containerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"enabled":true,"image":{"pullPolicy":"IfNotPresent","repository":"curlimages/curl","tag":"8.11.1"},"nvdApiEnabled":false,"podSecurityContext":{"fsGroup":1000,"runAsNonRoot":true,"runAsUser":1000}},"containerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"database":"dependency_track","enabled":true,"existingApiKeySecret":"","existingApiKeySecretKey":"API_KEY","image":{"repository":"dependencytrack/apiserver","tag":"4.11.4"},"initContainerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"nodeSelector":{},"persistence":{"size":"5Gi","storageClass":""},"podSecurityContext":{"fsGroup":1000,"runAsNonRoot":true,"runAsUser":1000},"resources":{"limits":{"cpu":"2","ephemeral-storage":"1Gi","memory":"6Gi"},"requests":{"cpu":"500m","ephemeral-storage":"256Mi","memory":"4Gi"}},"service":{"annotations":{}},"tmpSizeLimit":"2Gi","tolerations":[],"topologySpreadConstraints":[]}` | DependencyTrack SBOM analysis Provides SBOM ingestion, license analysis, and vulnerability correlation. Requires significant memory (4Gi+) to load its internal vulnerability database on startup. The bootstrap init container creates the initial admin user and API key for backend integration. |
-| dependencyTrack.adminPassword | string | `""` | Dependency-Track admin password. Leave empty and the chart generates a strong one on first install and keeps it stable across upgrades by reading the value back out of its own Secret. Set it explicitly if you want to know the password (to log into the Dependency-Track UI yourself) or if you manage the Secret externally, in which case this key must be present there. Stability relies on Helm's lookup, which only works when Helm talks to a live cluster. GitOps engines that render with "helm template" (ArgoCD, Flux) never see the stored value; this repo's ApplicationSet compensates with ignoreDifferences + RespectIgnoreDifferences on this Secret key. Other template-mode consumers should replicate that or set the password here. |
+| dependencyTrack | object | `{"adminPassword":"","affinity":{},"annotations":{},"bootstrap":{"automationPermissions":["BOM_UPLOAD","PROJECT_CREATION_UPLOAD","PORTFOLIO_MANAGEMENT","VIEW_PORTFOLIO","VIEW_VULNERABILITY","VULNERABILITY_ANALYSIS"],"containerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"enabled":true,"image":{"pullPolicy":"IfNotPresent","repository":"curlimages/curl","tag":"8.11.1"},"manageApiKeySecret":false,"nvdApiEnabled":false,"podSecurityContext":{"fsGroup":1000,"runAsNonRoot":true,"runAsUser":1000}},"containerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"database":"dependency_track","enabled":true,"existingApiKeySecret":"","existingApiKeySecretKey":"API_KEY","image":{"repository":"dependencytrack/apiserver","tag":"4.11.4"},"initContainerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"nodeSelector":{},"persistence":{"annotations":{},"existingClaim":"","size":"5Gi","storageClass":""},"podAnnotations":{},"podSecurityContext":{"fsGroup":1000,"runAsNonRoot":true,"runAsUser":1000},"proxy":{"enabled":true,"existingSecret":"","httpProxy":"","httpsProxy":"","noProxy":""},"resources":{"limits":{"cpu":"2","ephemeral-storage":"1Gi","memory":"6Gi"},"requests":{"cpu":"500m","ephemeral-storage":"256Mi","memory":"4Gi"}},"service":{"annotations":{}},"tmpSizeLimit":"2Gi","tolerations":[],"topologySpreadConstraints":[]}` | DependencyTrack SBOM analysis Provides SBOM ingestion, license analysis, and vulnerability correlation. Requires significant memory (4Gi+) to load its internal vulnerability database on startup. The bootstrap init container creates the initial admin user and API key for backend integration. |
+| dependencyTrack.adminPassword | string | `""` | Dependency-Track admin password. Leave empty and the chart generates a strong one on first install and keeps it stable across upgrades by reading the value back out of its own Secret. Set it explicitly if you want to know the password (to log into the Dependency-Track UI yourself) or if you manage the Secret externally, in which case this key must be present there. Stability relies on Helm's lookup, which only works when Helm talks to a live cluster. Engines that render with "helm template" (Argo CD) never see the stored value, so set the password here or use secrets.existingSecret. |
+| dependencyTrack.annotations | object | `{}` | Annotations added to the Dependency-Track Deployment metadata. See backend.annotations. |
+| dependencyTrack.bootstrap.automationPermissions | list | `["BOM_UPLOAD","PROJECT_CREATION_UPLOAD","PORTFOLIO_MANAGEMENT","VIEW_PORTFOLIO","VIEW_VULNERABILITY","VULNERABILITY_ANALYSIS"]` | Dependency-Track permissions the bootstrap Job grants to the Automation team, whose API key the backend uses. Dependency-Track creates that team with BOM_UPLOAD and VIEW_PORTFOLIO only, which makes the backend's project creation fail with 403 and no SBOM reach Dependency-Track. Granted on every Job run (install and upgrade, also when the key already exists) in the shared-volume and manageApiKeySecret modes; not with an operator-supplied existingApiKeySecret, whose team the operator manages. Grants are additive: removing an entry does not revoke it. Entries must be uppercase permission names; an unknown name fails the Job. Set to [] to skip the grants. |
 | dependencyTrack.bootstrap.image | object | `{"pullPolicy":"IfNotPresent","repository":"curlimages/curl","tag":"8.11.1"}` | Image for the one-shot bootstrap Job. It needs curl and nothing else. The job installs no packages at runtime, so this works on clusters with no egress to a package mirror; point the repository at your own registry for air-gapped installs. |
+| dependencyTrack.bootstrap.manageApiKeySecret | bool | `false` | Create existingApiKeySecret from the bootstrap-generated API key. Opt-in: requires bootstrap.enabled and existingApiKeySecret, with existingApiKeySecretKey=API_KEY. Preserves an existing nonempty key and removes the shared-config PVC handoff. Grants namespace-scoped Secret creation to a dedicated ServiceAccount; see the README for lifecycle and Argo CD ordering. |
 | dependencyTrack.bootstrap.nvdApiEnabled | bool | `false` | Have the bootstrap Job switch Dependency-Track's NVD mirroring to the NVD REST API 2.0 (config property `vuln-source/nvd.api.enabled=true`). Off by default: without an NVD API key the API is heavily rate-limited, so also set the key in the Dependency-Track UI (Administration > Vulnerability Sources > NVD). Applied on the next install or upgrade, including existing installs; setting it back to false leaves the property as it is rather than turning mirroring off. |
 | dependencyTrack.database | string | `"dependency_track"` | Database Dependency-Track connects to: the chart's own Postgres when postgres.enabled, the external server otherwise. It must exist and be owned by externalDatabase.username before the first install, since the chart only creates it on the in-chart Postgres. Two releases sharing one PostgreSQL server collide on the default name. An empty value falls back to dependency_track. On the in-chart Postgres, setting it to postgres.auth.database shares that database and skips CREATE DATABASE. |
 | dependencyTrack.existingApiKeySecret | string | `""` | Name of an existing Secret holding a Dependency-Track API key. When set, the backend reads DEPENDENCY_TRACK_API_KEY from it and the shared-config volume, its mount, DEPENDENCY_TRACK_API_KEY_FILE and the shared-config PVC are all skipped, so backend replicas are not pinned to one node by the ReadWriteOnce claim. The bootstrap Job then only reconciles the admin password (plus bootstrap.nvdApiEnabled when that is on) and never generates a key. Set existingApiKeySecretKey with it, and do not also name DEPENDENCY_TRACK_API_KEY in backend.env or backend.environmentSecrets: that would be a second definition of the same env var, which Kubernetes rejects. |
 | dependencyTrack.existingApiKeySecretKey | string | `"API_KEY"` | Key in existingApiKeySecret holding the API key. |
+| dependencyTrack.persistence.annotations | object | `{}` | Annotations for the Dependency-Track data PVC the chart creates (ignored when `existingClaim` is set). For example `helm.sh/resource-policy: keep` to keep it on `helm uninstall`, or `argocd.argoproj.io/sync-options: Prune=false` so Argo CD never prunes it. |
+| dependencyTrack.persistence.existingClaim | string | `""` | Name of a pre-existing PersistentVolumeClaim to mount as the Dependency-Track data directory instead of the chart-created `<fullname>-dtrack` PVC. `size`, `storageClass` and `annotations` are then unused. |
+| dependencyTrack.podAnnotations | object | `{}` | Annotations added to the Dependency-Track pod template. See backend.podAnnotations. |
+| dependencyTrack.proxy | object | `{"enabled":true,"existingSecret":"","httpProxy":"","httpsProxy":"","noProxy":""}` | Egress proxy for the Dependency-Track API server: inherits global.proxy field by field (noProxy is appended to the global list). Pulls vuln-intel feeds, so it usually needs egress; set enabled: false to cut it off. Dependency-Track reads the lowercase http_proxy/https_proxy/no_proxy forms itself, which the chart emits alongside the uppercase ones. |
 | dependencyTrack.service.annotations | object | `{}` | Extra annotations for the Dependency-Track Service. Needed for AWS ALB with target-type=ip, whose default probe is `GET /` and would fail here:   alb.ingress.kubernetes.io/healthcheck-path: /api/version   alb.ingress.kubernetes.io/success-codes: "200" |
 | dependencyTrack.tmpSizeLimit | string | `"2Gi"` | Size limit for the `/tmp` emptyDir volume. DependencyTrack writes ~1-2Gi into /tmp during startup (NVD mirror sync, DB migrations, JVM working files), so the default is sized to fit. Operators on constrained nodes can tune this down; an empty string falls back to the 2Gi default in the deployment template. |
 | dependencyTrack.tolerations | list | `[]` | Per-component scheduling (overrides global) |
-| edge | object | `{"affinity":{},"containerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"enabled":false,"env":{"CACHE_SIZE_MB":"10240","EDGE_HOST":"0.0.0.0","EDGE_PORT":"8081","HEARTBEAT_INTERVAL_SECS":"30","RUST_LOG":"info,artifact_keeper_edge=debug"},"image":{"pullPolicy":"Always","repository":"ghcr.io/artifact-keeper/artifact-keeper-edge","tag":"dev"},"nodeSelector":{},"podDisruptionBudget":{"enabled":false,"minAvailable":1},"podSecurityContext":{"fsGroup":1000,"runAsNonRoot":true,"runAsUser":1000},"replicaCount":1,"resources":{"limits":{"cpu":"500m","memory":"512Mi"},"requests":{"cpu":"50m","memory":"128Mi"}},"service":{"port":8081,"type":"ClusterIP"},"tolerations":[],"topologySpreadConstraints":[]}` | Edge replication service NOTE: The ghcr.io/artifact-keeper/artifact-keeper-edge image is not yet published. Setting edge.enabled: true will fail because the image cannot be pulled. Airgap operators should exclude this component from pre-pull lists until the edge image ships. Tracking: issue #56. |
+| edge | object | `{"affinity":{},"containerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"enabled":false,"env":{"CACHE_SIZE_MB":"10240","EDGE_HOST":"0.0.0.0","EDGE_PORT":"8081","HEARTBEAT_INTERVAL_SECS":"30","RUST_LOG":"info,artifact_keeper_edge=debug"},"image":{"pullPolicy":"Always","repository":"ghcr.io/artifact-keeper/artifact-keeper-edge","tag":"dev"},"nodeSelector":{},"podDisruptionBudget":{"enabled":false,"minAvailable":1},"podSecurityContext":{"fsGroup":1000,"runAsNonRoot":true,"runAsUser":1000},"proxy":{"enabled":true,"existingSecret":"","httpProxy":"","httpsProxy":"","noProxy":""},"replicaCount":1,"resources":{"limits":{"cpu":"500m","memory":"512Mi"},"requests":{"cpu":"50m","memory":"128Mi"}},"service":{"port":8081,"type":"ClusterIP"},"tolerations":[],"topologySpreadConstraints":[]}` | Edge replication service NOTE: The ghcr.io/artifact-keeper/artifact-keeper-edge image is not yet published. Setting edge.enabled: true will fail because the image cannot be pulled. Airgap operators should exclude this component from pre-pull lists until the edge image ships. Tracking: issue #56. |
 | edge.image.tag | string | `"dev"` | "dev" floating tag. Kept explicit (not empty) on purpose: the edge image is not published at the chart's appVersion yet, so inheriting appVersion would reference an image that does not exist. See the edge note above and issue #56. Leave empty ("") only once edge ships at the chart's appVersion. |
+| edge.proxy | object | `{"enabled":true,"existingSecret":"","httpProxy":"","httpsProxy":"","noProxy":""}` | Egress proxy for the edge: inherits global.proxy field by field (noProxy is appended to the global list). Set enabled: false to cut off its egress. |
 | edge.tolerations | list | `[]` | Per-component scheduling (overrides global) |
 | externalDatabase | object | `{"database":"artifact_registry","existingHostKey":"","existingPasswordKey":"","existingPortKey":"","existingSecret":"","existingSecretKey":"DATABASE_URL","host":"","password":"","port":5432,"username":""}` | External database (used when postgres.enabled=false) With externalSecrets.composeDatabaseUrl=true, host/port/database are baked into the ESO-templated DATABASE_URL (credentials come from the RDS-managed secret referenced by externalSecrets.secrets.dbCredentials, whose JSON has `username` and `password` only). host must be set in that case. |
 | externalDatabase.existingHostKey | string | `""` | Key in existingSecret holding the database host for Dependency-Track's JDBC URL. Only read when postgres.enabled=false, existingSecret is set and externalDatabase.host is empty; a host set in values is used with externalDatabase.port instead. Defaults to POSTGRES_HOST when empty. |
 | externalDatabase.existingPasswordKey | string | `""` | Key in existingSecret holding the database password Dependency-Track uses (ALPINE_DATABASE_PASSWORD). With postgres.enabled=false and existingSecret set, Dependency-Track reads its password from existingSecret when this is set, or when the chart creates its own Secret (neither externalSecrets.enabled nor secrets.existingSecret); the key then defaults to POSTGRES_PASSWORD. Otherwise it keeps reading POSTGRES_PASSWORD from the app Secret, which External Secrets or secrets.existingSecret supply. |
 | externalDatabase.existingPortKey | string | `""` | Key in existingSecret holding the database port for Dependency-Track's JDBC URL, read under the same conditions as existingHostKey. Defaults to POSTGRES_PORT when empty. |
-| externalSecrets | object | `{"composeDatabaseUrl":false,"enabled":false,"refreshInterval":"1h","secrets":{"dbCredentials":"artifact-keeper/${ENVIRONMENT}/db-credentials","dtAdminPassword":"artifact-keeper/${ENVIRONMENT}/dt-admin-password","jwtSecret":"artifact-keeper/${ENVIRONMENT}/jwt-secret","migrationEncryptionKey":"","opensearchAuth":"artifact-keeper/${ENVIRONMENT}/opensearch-auth","s3Keys":"artifact-keeper/${ENVIRONMENT}/s3-keys","smtpPassword":"artifact-keeper/${ENVIRONMENT}/smtp-password","webhookSecretKey":""},"storeKind":"ClusterSecretStore","storeName":"aws-secrets-manager"}` | External Secrets Operator When enabled, ExternalSecret CRDs replace the static Secret template. Requires External Secrets Operator installed on the cluster and a SecretStore or ClusterSecretStore configured for your provider. |
+| externalSecrets | object | `{"apiVersion":"external-secrets.io/v1","composeDatabaseUrl":false,"enabled":false,"refreshInterval":"1h","secrets":{"dbCredentials":"artifact-keeper/${ENVIRONMENT}/db-credentials","dtAdminPassword":"artifact-keeper/${ENVIRONMENT}/dt-admin-password","jwtSecret":"artifact-keeper/${ENVIRONMENT}/jwt-secret","migrationEncryptionKey":"","opensearchAuth":"artifact-keeper/${ENVIRONMENT}/opensearch-auth","s3Keys":"artifact-keeper/${ENVIRONMENT}/s3-keys","smtpPassword":"artifact-keeper/${ENVIRONMENT}/smtp-password","ssoEncryptionKey":"","webhookSecretKey":""},"storeKind":"ClusterSecretStore","storeName":"aws-secrets-manager"}` | External Secrets Operator When enabled, ExternalSecret CRDs replace the static Secret template. Requires External Secrets Operator installed on the cluster and a SecretStore or ClusterSecretStore configured for your provider. |
+| externalSecrets.apiVersion | string | `"external-secrets.io/v1"` | API version for the rendered ExternalSecret. The default, `external-secrets.io/v1`, needs an External Secrets Operator release that serves the v1 API; set `external-secrets.io/v1beta1` for older operators that serve only v1beta1. Must have the form external-secrets.io/<version>. |
 | externalSecrets.composeDatabaseUrl | bool | `false` | Compose DATABASE_URL in the chart instead of reading a pre-composed `database-url` property. Turn this on when secrets.dbCredentials points at an RDS-managed master-user secret, whose JSON carries only `username` and `password`. The URL is templated from those plus externalDatabase.host/ port/database, so it follows RDS password rotation. Requires externalDatabase.host to be set. |
 | extraManifests | list | `[]` | Extra raw Kubernetes manifests to render alongside the chart. Each entry is a YAML string (templated) emitted as its own document. Useful for objects the chart does not natively model (ExternalSecret, SealedSecret, custom CRs, etc.) without forking the chart. extraManifests:   - |     apiVersion: v1     kind: Secret     metadata:       name: otel-collector-auth     type: Opaque     stringData:       otlp-headers: "authorization=Bearer xxxxx" |
 | fleet | object | `{"enabled":false,"externalDatabaseBootstrap":{"adminSecret":"","enabled":true,"existingSecret":"","host":"","passwordKey":"password","podSecurityContext":{},"port":5432},"guardrails":{"databaseNamespace":"","ingressNamespace":"ingress-nginx","limitRange":false,"networkPolicy":false,"quotaOverrides":{},"resourceQuota":false,"scannerNamespace":"","searchNamespace":""},"hibernate":false,"host":"","instanceId":"","preset":"","storage":{"accessKeyIdKey":"S3_ACCESS_KEY_ID","existingSecret":"","secretAccessKeyKey":"S3_SECRET_ACCESS_KEY"}}` | Fleet mode: many instances per cluster sharing external services. Opt-in and off by default. When fleet.enabled is false none of the fleet templates render and backend/web sizing and replica counts come from the per-component values above, so a standard single-instance install is unaffected. When enabled, one release is one instance: sizing comes from a preset, the ingress serves a single host, and the instance uses a shared PostgreSQL server and shared object storage instead of in-release services. See templates/_helpers.tpl for the preset tables. |
@@ -162,10 +202,15 @@ kubectl delete pvc -l app.kubernetes.io/instance=ak -n artifact-keeper
 | global.imagePullSecrets | list | `[]` | Image pull secrets applied to workloads that honor them (currently the scanner-adapter). Leave empty for public images. |
 | global.imageRegistry | string | `""` | Override the registry for every chart-managed container (including init containers and hooks). Empty preserves per-image repositories. Use a host with optional port/path, e.g. registry.example.com:5000/mirror, without a URL scheme. Replaces source registry hosts, preserves repository paths, and adds library/ for Docker Hub official images. Does not translate repository names between registries; see "Container registries" in README. |
 | global.nodeSelector | object | `{}` |  |
+| global.proxy | object | `{"existingSecret":"","httpProxy":"","httpsProxy":"","noProxy":""}` | Cluster-wide egress proxy. Set httpProxy/httpsProxy to route every component's outbound traffic through it. NO_PROXY is built for you (loopback, cluster DNS suffixes and every in-chart Service name), so noProxy only needs your extra hosts. Each field can be overridden per component under <component>.proxy (field by field; proxy.enabled: false opts that component out). See "Egress Proxy" in the README. |
+| global.proxy.existingSecret | string | `""` | Name of an existing Secret in the release namespace whose HTTP_PROXY and HTTPS_PROXY keys hold the proxy URLs (for proxies with credentials in the URL). Each is rendered as a secretKeyRef unless the literal httpProxy/httpsProxy field above is set, which wins for that variable. |
+| global.proxy.httpProxy | string | `""` | Proxy URL for plain-HTTP egress, rendered as HTTP_PROXY and http_proxy. |
+| global.proxy.httpsProxy | string | `""` | Proxy URL for HTTPS egress, rendered as HTTPS_PROXY and https_proxy. |
+| global.proxy.noProxy | string | `""` | Comma-separated extra NO_PROXY entries, appended to the generated in-cluster defaults. In-cluster S3 endpoints such as MinIO are NOT detected and must be listed here, as must fleet-shared Services. |
 | global.storageClass | string | `"standard"` |  |
 | global.tolerations | list | `[]` | Scheduling constraints applied to ALL workloads by default. Per-component values (e.g. backend.nodeSelector) override these.  NOTE: Per-component values fully replace global, they do not merge. Setting backend.tolerations means the backend gets only those tolerations, not global + backend combined. There is currently no way to opt a single component out of global scheduling without setting its own values. |
 | global.topologySpreadConstraints | list | `[]` |  |
-| httpRoute | object | `{"annotations":{},"dtrack":{"corsAllowOrigin":"*","enabled":false},"enabled":false,"hostnames":[],"labels":{},"networkPolicy":{"namespace":"","podSelector":{}},"parentRefs":[]}` | Gateway API routing through an existing Gateway. Mutually exclusive with Ingress (ingress.enabled) and OpenShift Routes (route.enabled). |
+| httpRoute | object | `{"annotations":{},"dtrack":{"corsAllowOrigin":"*","enabled":false},"enabled":false,"hostnames":[],"labels":{},"networkPolicy":{"namespace":"","podSelector":{}},"parentRefs":[],"timeouts":{"backendRequest":"","request":""}}` | Gateway API routing through an existing Gateway. Mutually exclusive with Ingress (ingress.enabled) and OpenShift Routes (route.enabled). |
 | httpRoute.annotations | object | `{}` | HTTPRoute annotations (no nginx or cert-manager annotations are added). |
 | httpRoute.dtrack.corsAllowOrigin | string | `"*"` | Dependency-Track ALPINE_CORS_ALLOW_ORIGIN when routed through HTTPRoute. |
 | httpRoute.dtrack.enabled | bool | `false` | Opt in to /dtrack pass-through, matching Ingress; requires dependencyTrack.enabled. Enable only behind authentication you control. |
@@ -176,9 +221,14 @@ kubectl delete pvc -l app.kubernetes.io/instance=ak -n artifact-keeper
 | httpRoute.networkPolicy.namespace | string | `""` | Namespace of the Gateway proxy pods (not necessarily the Gateway object). |
 | httpRoute.networkPolicy.podSelector | object | `{}` | Non-empty map of labels selecting Gateway proxy pods in that namespace. |
 | httpRoute.parentRefs | list | `[]` | Existing Gateway references (name, optional namespace, sectionName and port). The Gateway listener must allow HTTPRoutes from this release's namespace. |
-| imageBuilder | object | `{"affinity":{},"enabled":false,"gcKeepStorage":20000,"image":{"pullPolicy":"IfNotPresent","repository":"docker.io/moby/buildkit","tag":"v0.33.0-rootless"},"nodeSelector":{},"persistence":{"enabled":true,"size":"40Gi","storageClass":""},"policy":{"adminOnly":true,"allowDockerfile":false,"allowRun":false,"baseAllowlist":"","maxConcurrent":2,"pipIndexUrl":"","timeoutSecs":1800},"replicaCount":1,"resources":{"limits":{"cpu":"4","memory":"8Gi"},"requests":{"cpu":"500m","memory":"1Gi"}},"runAsUser":1000,"service":{"port":1234},"tolerations":[],"topologySpreadConstraints":[]}` | Image builder: a rootless BuildKit daemon the backend drives to build container images from a spec and push them back into this registry (backend feature #4034, off by default). The daemon is its OWN Deployment, not a sidecar: the backend ships only the `buildctl` client and reaches the daemon over TCP, so the daemon's relaxed security profile (seccomp and AppArmor unconfined, needed for rootless user namespaces; still no privileged flag) never applies to the registry's pod. Enabling this wires AK_BUILDKIT_ADDR and AK_IMAGE_BUILD_PUSH_REGISTRY into the backend and adds the network-policy rules both directions of the build need. |
+| httpRoute.timeouts | object | `{"backendRequest":"","request":""}` | Gateway API `timeouts` (HTTPRouteTimeouts) on the rules that route to the backend: /api, /v2, /health, /ready and every package-format path. Large artifact uploads and downloads can outlast a Gateway's default request timeout, which then cuts the transfer off (#358). The web catch-all and /dtrack rules are left without timeouts and keep the Gateway's default. Values are Gateway API duration strings (GEP-2257): one to four <number><unit> groups with h, m, s or ms, such as "300s" or "1h30m"; "0s" disables the timeout. Empty (the default) omits the field. backendRequest may not exceed request unless request is "0s". Requires the HTTPRoute CRD from Gateway API v1.2.0 or later (standard channel): the v1.0 and v1.1 standard CRDs have no `timeouts` field, so the API server drops it and the Gateway default stays in force. Support is "Extended" in Gateway API, so check that your Gateway implementation honours it. |
+| httpRoute.timeouts.backendRequest | string | `""` | Rendered as rules[].timeouts.backendRequest: one request from the Gateway to the backend, including retries. |
+| httpRoute.timeouts.request | string | `""` | Rendered as rules[].timeouts.request: the whole request and response exchange, client to Gateway. |
+| imageBuilder | object | `{"affinity":{},"enabled":false,"gcKeepStorage":20000,"image":{"pullPolicy":"IfNotPresent","repository":"docker.io/moby/buildkit","tag":"v0.33.0-rootless"},"nodeSelector":{},"persistence":{"annotations":{},"enabled":true,"existingClaim":"","size":"40Gi","storageClass":""},"policy":{"adminOnly":true,"allowDockerfile":false,"allowRun":false,"baseAllowlist":"","maxConcurrent":2,"pipIndexUrl":"","timeoutSecs":1800},"proxy":{"enabled":true,"existingSecret":"","httpProxy":"","httpsProxy":"","noProxy":""},"replicaCount":1,"resources":{"limits":{"cpu":"4","memory":"8Gi"},"requests":{"cpu":"500m","memory":"1Gi"}},"runAsUser":1000,"service":{"port":1234},"tolerations":[],"topologySpreadConstraints":[]}` | Image builder: a rootless BuildKit daemon the backend drives to build container images from a spec and push them back into this registry (backend feature #4034, off by default). The daemon is its OWN Deployment, not a sidecar: the backend ships only the `buildctl` client and reaches the daemon over TCP, so the daemon's relaxed security profile (seccomp and AppArmor unconfined, needed for rootless user namespaces; still no privileged flag) never applies to the registry's pod. Enabling this wires AK_BUILDKIT_ADDR and AK_IMAGE_BUILD_PUSH_REGISTRY into the backend and adds the network-policy rules both directions of the build need. |
 | imageBuilder.gcKeepStorage | int | `20000` | Storage buildkitd keeps under its state directory before garbage collecting (bytes, buildkitd --oci-worker-gc-keepstorage). |
-| imageBuilder.persistence | object | `{"enabled":true,"size":"40Gi","storageClass":""}` | Cache volume for pulled layers and build state. Without persistence the daemon starts cold after every restart and re-pulls every base image. |
+| imageBuilder.persistence | object | `{"annotations":{},"enabled":true,"existingClaim":"","size":"40Gi","storageClass":""}` | Cache volume for pulled layers and build state. Without persistence the daemon starts cold after every restart and re-pulls every base image. |
+| imageBuilder.persistence.annotations | object | `{}` | Annotations for the BuildKit cache PVC the chart creates (ignored when `existingClaim` is set). For example `helm.sh/resource-policy: keep` to keep it on `helm uninstall`, or `argocd.argoproj.io/sync-options: Prune=false` so Argo CD never prunes it. |
+| imageBuilder.persistence.existingClaim | string | `""` | Name of a pre-existing PersistentVolumeClaim to mount as the BuildKit cache instead of the chart-created `<fullname>-buildkitd-cache` PVC. Requires `enabled: true`; `size`, `storageClass` and `annotations` are then unused. |
 | imageBuilder.policy | object | `{"adminOnly":true,"allowDockerfile":false,"allowRun":false,"baseAllowlist":"","maxConcurrent":2,"pipIndexUrl":"","timeoutSecs":1800}` | Policy the backend applies to specs. Each maps to an AK_IMAGE_BUILD_* variable; an explicit entry in backend.env overrides the value here. |
 | imageBuilder.policy.adminOnly | bool | `true` | Only administrators may build. `false` opens building to every user with write access on the repository. |
 | imageBuilder.policy.allowDockerfile | bool | `false` | Let a spec carry a whole Dockerfile (every FROM is still checked against baseAllowlist). |
@@ -187,6 +237,7 @@ kubectl delete pvc -l app.kubernetes.io/instance=ak -n artifact-keeper
 | imageBuilder.policy.maxConcurrent | int | `2` | Builds the backend drives at once. |
 | imageBuilder.policy.pipIndexUrl | string | `""` | A PyPI index every generated `pip install` is pinned to; point it at this instance's PyPI proxy so package downloads never leave the registry. |
 | imageBuilder.policy.timeoutSecs | int | `1800` | Wall clock per build, seconds. |
+| imageBuilder.proxy | object | `{"enabled":true,"existingSecret":"","httpProxy":"","httpsProxy":"","noProxy":""}` | Egress proxy for buildkitd: inherits global.proxy field by field (noProxy is appended to the global list). The daemon pulls base images and packages from outside the cluster, so it usually needs egress; set enabled: false to cut it off. |
 | imageBuilder.runAsUser | int | `1000` | The uid the rootless daemon runs as; must match the image's `user` account (1000 in moby/buildkit rootless images). |
 | imageBuilder.tolerations | list | `[]` | Per-component scheduling (overrides global) |
 | ingress.annotations | object | `{}` |  |
@@ -202,6 +253,7 @@ kubectl delete pvc -l app.kubernetes.io/instance=ak -n artifact-keeper
 | ingress.internal.enabled | bool | `false` | Render the internal Ingress. Also requires ingress.enabled. |
 | ingress.internal.host | string | `""` | Hostname for the internal Ingress. Empty means "same as ingress.host" (split-horizon). Set a distinct name if inside and outside must differ. |
 | ingress.maxBodySize | string | `"1024m"` |  |
+| ingress.nginxAnnotations | bool | `false` | Render the nginx proxy annotations below for a className other than `nginx`, such as an internal ingress-nginx class named `nginx-internal`. className `nginx` always gets them. For any other class they are left out unless this is true, and NOTES.txt warns that the limits are not applied. |
 | ingress.proxyReadTimeoutSeconds | int | `300` |  |
 | ingress.proxySendTimeoutSeconds | int | `300` |  |
 | ingress.tls.enabled | bool | `true` |  |
@@ -212,60 +264,125 @@ kubectl delete pvc -l app.kubernetes.io/instance=ak -n artifact-keeper
 | istio.gateways | list | `[]` | Gateways to bind to. ONE VirtualService IS RENDERED PER ENTRY - the split is what makes private DNS work, since external-dns takes a record's target from the Gateway the VirtualService binds to and only the private Gateway carries one. Each entry: `name` (object-name suffix, must be unique), `gateway` ("namespace/name"), optional `hosts` (defaults to the Ingress host plus extraHosts) and optional `annotations`.   gateways:     - name: public       gateway: istio-ingress/public     - name: private       gateway: istio-ingress/private |
 | istio.timeout | string | `""` | Per-route timeout (e.g. "300s"). Istio defaults to 15s, which is far too short for large artifact uploads and downloads - set this before serving package traffic through the mesh. |
 | nameOverride | string | `""` |  |
-| networkPolicy | object | `{"allowedCIDRs":[],"dnsPorts":[53],"enabled":true,"ingressNamespace":"ingress-nginx","ingressPeers":[]}` | Network policies |
+| networkPolicy | object | `{"allowedCIDRs":[],"dnsPorts":[53],"enabled":true,"ingressNamespace":"ingress-nginx","ingressPeers":[],"monitoringNamespace":"monitoring","monitoringPeers":[]}` | Network policies |
 | networkPolicy.allowedCIDRs | list | `[]` | Extra CIDRs allowed to reach the ingress-facing pods (backend, web, dependency-track). Required for AWS ALB with target-type=ip: the load balancer health-probes and forwards from ENIs in the VPC, not from ingress-nginx pods, so the ingressNamespace rule below never matches it. Example: ["10.200.0.0/16"]. Leave empty when using ingress-nginx only. |
 | networkPolicy.dnsPorts | list | `[53]` | Destination ports allowed for DNS egress, each opened for UDP and TCP. OpenShift needs [53, 5353]: its dns-default Service maps port 53 to pod port 5353 and NetworkPolicy matches the pod port. Also used by the fleet guardrail NetworkPolicy. Must not be empty. |
 | networkPolicy.ingressNamespace | string | `"ingress-nginx"` | Namespace the ingress controller pods run in. The backend and web policies admit pods labeled `app.kubernetes.io/name: ingress-nginx`, and this pins WHICH namespace those pods may come from. An empty value renders `namespaceSelector: {}`, which admits pods carrying that label from ANY namespace — on a shared cluster that lets any workload that can set its own pod labels reach the backend and web ports directly, bypassing the ingress controller and everything enforced there (TLS, rate limiting, allowlist annotations). The default matches the conventional namespace of the community ingress-nginx controller chart; set it to the namespace your controller actually runs in. Set to "" only if you understand the above. |
 | networkPolicy.ingressPeers | list | `[]` | NetworkPolicy `from` peers admitted to the backend, web and edge ports as the ingress controller. Empty (the default) renders the ingress-nginx peer above (pods labeled `app.kubernetes.io/name: ingress-nginx`, in ingressNamespace). Set a list of NetworkPolicyPeer objects (namespaceSelector and/or podSelector) for any other controller; it replaces the ingress-nginx peer and ingressNamespace is then ignored. values-openshift.yaml sets this to the OpenShift router namespace. |
-| opensearch | object | `{"affinity":{},"allowInvalidCerts":true,"auth":{"password":"","username":"admin"},"clusterName":"artifact-keeper","containerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":false},"disableSecurityPlugin":true,"enabled":true,"fixOwnership":{"enabled":true,"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"add":["CHOWN","FOWNER"],"drop":["ALL"]},"readOnlyRootFilesystem":true,"runAsNonRoot":false,"runAsUser":0}},"image":{"repository":"opensearchproject/opensearch","tag":"2.19.1"},"initContainerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"initContainers":{"image":{"repository":"busybox","tag":"1.37"}},"javaOpts":"-Xms512m -Xmx512m","nodeSelector":{},"persistence":{"enabled":true,"size":"5Gi","storageClass":""},"podSecurityContext":{"fsGroup":1000,"runAsNonRoot":true,"runAsUser":1000},"replicaCount":1,"resources":{"limits":{"cpu":"2","ephemeral-storage":"512Mi","memory":"2Gi"},"requests":{"cpu":"250m","ephemeral-storage":"128Mi","memory":"1Gi"}},"tolerations":[],"topologySpreadConstraints":[],"waitTimeoutSeconds":180}` | OpenSearch (full-text search engine) Powers full-text artifact search. The backend auto-reindexes from Postgres on first boot, so there is no data migration required when enabling OpenSearch on a fresh install.  Deployment mode: - replicaCount: 1 (default) renders a single-node Deployment with   discovery.type=single-node, suitable for dev and small installs. - replicaCount: >= 2 renders a StatefulSet with per-pod PVCs and sets   cluster.initial_cluster_manager_nodes for multi-node bootstrapping.   Use this for staging/production.  Security: - disableSecurityPlugin: true is the simplest option and is the default   for the example template. The backend talks plain HTTP on port 9200. - disableSecurityPlugin: false enables the OpenSearch Security plugin.   You must then provide auth.username/auth.password and configure real   TLS certificates. The default demo config is always disabled   (DISABLE_INSTALL_DEMO_CONFIG=true) so you do not ship demo certs   into production by accident. |
+| networkPolicy.monitoringNamespace | string | `"monitoring"` | Namespace Prometheus runs in. The backend, web and edge policies admit scrapes from every pod in it, matched on the kubernetes.io/metadata.name label. kube-prometheus-stack installs often use a different namespace (for example `observability`); set it to yours. |
+| networkPolicy.monitoringPeers | list | `[]` | NetworkPolicy `from` peers admitted to the scrape ports instead of the monitoringNamespace peer, rendered verbatim. Use it to admit only the Prometheus pods, for example a namespaceSelector plus `podSelector: {matchLabels: {app.kubernetes.io/name: prometheus}}`. The backend policy admits the HTTP port and, when backend.metricsListener.enabled, the metrics listener port. |
+| opensearch | object | `{"affinity":{},"allowInvalidCerts":true,"auth":{"password":"","username":"admin"},"clusterName":"artifact-keeper","containerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":false},"disableSecurityPlugin":true,"enabled":true,"fixOwnership":{"enabled":true,"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"add":["CHOWN","FOWNER"],"drop":["ALL"]},"readOnlyRootFilesystem":true,"runAsNonRoot":false,"runAsUser":0}},"image":{"repository":"opensearchproject/opensearch","tag":"2.19.1"},"initContainerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"initContainers":{"image":{"repository":"busybox","tag":"1.37"}},"javaOpts":"-Xms512m -Xmx512m","networkPolicy":{"enabled":true,"extraFrom":[]},"nodeSelector":{},"persistence":{"annotations":{},"enabled":true,"existingClaim":"","size":"5Gi","storageClass":""},"podSecurityContext":{"fsGroup":1000,"runAsNonRoot":true,"runAsUser":1000},"proxy":{"enabled":false,"existingSecret":"","httpProxy":"","httpsProxy":"","noProxy":""},"replicaCount":1,"resources":{"limits":{"cpu":"2","ephemeral-storage":"512Mi","memory":"2Gi"},"requests":{"cpu":"250m","ephemeral-storage":"128Mi","memory":"1Gi"}},"tolerations":[],"topologySpreadConstraints":[],"waitTimeoutSeconds":180}` | OpenSearch (full-text search engine) Powers full-text artifact search. The backend auto-reindexes from Postgres on first boot, so there is no data migration required when enabling OpenSearch on a fresh install.  Deployment mode: - replicaCount: 1 (default) renders a single-node Deployment with   discovery.type=single-node, suitable for dev and small installs. - replicaCount: >= 2 renders a StatefulSet with per-pod PVCs and sets   cluster.initial_cluster_manager_nodes for multi-node bootstrapping.   Use this for staging/production.  Security: - disableSecurityPlugin: true is the simplest option and is the default   for the example template. The backend talks plain HTTP on port 9200. - disableSecurityPlugin: false enables the OpenSearch Security plugin.   You must then provide auth.username/auth.password and configure real   TLS certificates. The default demo config is always disabled   (DISABLE_INSTALL_DEMO_CONFIG=true) so you do not ship demo certs   into production by accident. |
 | opensearch.allowInvalidCerts | bool | `true` | Backend-side TLS verification toggle. Leave true for self-signed certs in development; set to false once real certs are in place. |
 | opensearch.auth | object | `{"password":"","username":"admin"}` | Admin credentials used when disableSecurityPlugin is false. Ignored otherwise. Override via --set or externalSecrets in production. |
 | opensearch.auth.password | string | `""` | OpenSearch 2.12+ requires a strong initial admin password. The chart ships none: with the Security plugin enabled (disableSecurityPlugin: false) an empty value fails the render with a validation error. Never commit a real credential here; use --set, an existingSecret, or externalSecrets instead. |
 | opensearch.containerSecurityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":false}` | readOnlyRootFilesystem is false because OpenSearch writes config and lock files outside its data volume on startup. |
-| opensearch.disableSecurityPlugin | bool | `true` | When true, the Security plugin is disabled and the backend talks plain HTTP. Set to false for staging/production (see README for cert-manager setup). |
+| opensearch.disableSecurityPlugin | bool | `true` | When true (the default), the Security plugin is disabled: OpenSearch has no authentication and the backend talks plain HTTP. Anything that can reach :9200 can read, write and delete the search index, so the chart restricts that port to the backend pods with a NetworkPolicy (see opensearch.networkPolicy) and NOTES.txt warns. false turns the plugin on, but the chart does not provision the TLS certificates the plugin requires yet, so OpenSearch only starts if you supply your own security configuration (with the chart's settings alone it exits with "No SSL configuration found"). A supported security-on profile is tracked in iac#379. |
 | opensearch.image.tag | string | `"2.19.1"` | Pin to a specific patch for stability. 2.19.1 matches the version the backend is tested against. |
 | opensearch.initContainerSecurityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true}` | Applies to the sysctl-check init container. The fix-ownership init container has separate root + CHOWN/FOWNER requirements, configured under `opensearch.fixOwnership.securityContext`. |
-| opensearch.initContainers | object | `{"image":{"repository":"busybox","tag":"1.37"}}` | fix-ownership and sysctl-check init container image. Override for airgapped mirrors. |
+| opensearch.initContainers | object | `{"image":{"repository":"busybox","tag":"1.37"}}` | Image shared by both OpenSearch init containers, fix-ownership and sysctl-check (the backend's wait-for-opensearch uses backend.waitForOpenSearch.image instead). Override for airgapped mirrors. A replacement must provide `sh` and `chown` (fix-ownership runs `chown -R` on the data volume) and `cat` (sysctl-check reads /proc/sys/vm/max_map_count): any busybox- or alpine-compatible image works; distroless or scratch images do not. Security contexts are separate: opensearch.initContainerSecurityContext applies only to sysctl-check, and fix-ownership uses opensearch.fixOwnership.securityContext. |
 | opensearch.javaOpts | string | `"-Xms512m -Xmx512m"` | JVM heap sizing. Keep Xms == Xmx. The container memory limit should be roughly 2x the heap to leave room for off-heap and page cache. |
+| opensearch.networkPolicy.enabled | bool | `true` | Restrict OpenSearch ingress even when networkPolicy.enabled is false: :9200 from the backend pods only, :9300 from OpenSearch pods only. The policy also renders whenever networkPolicy.enabled is true. It needs a CNI that enforces NetworkPolicy. Set false only if something else must reach OpenSearch and extraFrom cannot express it. |
+| opensearch.networkPolicy.extraFrom | list | `[]` | Extra NetworkPolicyPeer objects admitted to :9200 (for example an OpenSearch Dashboards pod or a backup job), rendered verbatim. |
+| opensearch.persistence.annotations | object | `{}` | Annotations for the OpenSearch PVC the chart creates (ignored when `existingClaim` is set), e.g. `helm.sh/resource-policy: keep` or `argocd.argoproj.io/sync-options: Prune=false`. With `replicaCount` > 1 they go on the StatefulSet's `volumeClaimTemplates`, which are immutable on an installed release. |
 | opensearch.persistence.enabled | bool | `true` | When false and replicaCount == 1, data lives in an emptyDir sized according to `size`. Set to true (and configure storageClass) for any install that must survive pod restarts. |
+| opensearch.persistence.existingClaim | string | `""` | Name of a pre-existing PersistentVolumeClaim to mount as the OpenSearch data directory instead of the chart-created `<fullname>-opensearch` PVC. Requires `enabled: true` and `replicaCount: 1`: a multi-node cluster is a StatefulSet whose `volumeClaimTemplates` give each node its own PVC, so one claim cannot back it. `size`, `storageClass` and `annotations` are then unused. |
+| opensearch.proxy | object | `{"enabled":false,"existingSecret":"","httpProxy":"","httpsProxy":"","noProxy":""}` | No egress proxy: OpenSearch only serves the backend in-cluster and never calls out. Set enabled: true to route it via global.proxy; the other fields then override global.proxy field by field. |
 | opensearch.resources.limits.memory | string | `"2Gi"` | Must be roughly 2x the JVM heap in javaOpts. |
 | opensearch.tolerations | list | `[]` | Per-component scheduling (overrides global) |
 | opensearch.waitTimeoutSeconds | int | `180` | Seconds the backend's wait-for-opensearch init container waits for OpenSearch to reach green/yellow before proceeding on the Postgres-native search fallback. OpenSearch is an optional accelerator (the backend boots without it), so an unbounded wait turns a slow/degraded OpenSearch into a backend-that-never-starts. 0 restores the legacy wait-forever behavior. |
-| postgres | object | `{"affinity":{},"auth":{"database":"artifact_registry","password":"","username":"registry"},"containerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"enabled":true,"image":{"repository":"postgres","tag":"16-alpine"},"initDb":{"enabled":true},"nodeSelector":{},"persistence":{"size":"20Gi","storageClass":""},"podSecurityContext":{"fsGroup":999,"runAsNonRoot":true,"runAsUser":999},"resources":{"limits":{"cpu":"1","ephemeral-storage":"512Mi","memory":"1Gi"},"requests":{"cpu":"250m","ephemeral-storage":"128Mi","memory":"256Mi"}},"tolerations":[],"topologySpreadConstraints":[]}` | PostgreSQL (in-cluster, disable for external/RDS) For production, set postgres.enabled=false and configure externalDatabase to point at a managed database (RDS, Cloud SQL, etc.). The in-cluster instance is suitable for dev/testing only. |
+| postgres | object | `{"affinity":{},"annotations":{},"auth":{"database":"artifact_registry","password":"","username":"registry"},"containerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"enabled":true,"image":{"repository":"postgres","tag":"16-alpine"},"initDb":{"enabled":true},"nodeSelector":{},"persistence":{"annotations":{},"existingClaim":"","size":"20Gi","storageClass":""},"podAnnotations":{},"podSecurityContext":{"fsGroup":999,"runAsNonRoot":true,"runAsUser":999},"resources":{"limits":{"cpu":"1","ephemeral-storage":"512Mi","memory":"1Gi"},"requests":{"cpu":"250m","ephemeral-storage":"128Mi","memory":"256Mi"}},"tolerations":[],"topologySpreadConstraints":[]}` | PostgreSQL (in-cluster, disable for external/RDS) For production, set postgres.enabled=false and configure externalDatabase to point at a managed database (RDS, Cloud SQL, etc.). The in-cluster instance is suitable for dev/testing only. |
+| postgres.annotations | object | `{}` | Annotations added to the PostgreSQL StatefulSet metadata. See backend.annotations. |
+| postgres.auth.password | string | `""` | Empty generates one and keeps it across upgrades (see secrets.generate). Postgres only applies the password when it first initializes its data directory, so changing it here later doesn't change the database's password, and a new install over a retained PVC needs the old one. Under Argo CD or plain `helm template`, set it or use secrets.existingSecret. If you supply your own, it goes into DATABASE_URL unencoded, so avoid URL-reserved characters. |
 | postgres.containerSecurityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}` | Container-level securityContext. Drops all capabilities and disables privilege escalation; the pod already runs as non-root UID 999 (podSecurityContext above), so the postgres entrypoint takes its non-root path and never needs CHOWN/FOWNER on the data directory.  readOnlyRootFilesystem is intentionally NOT set: postgres writes its unix socket, lock files, and initdb artifacts outside the data volume (/var/run/postgresql, /tmp), so a read-only rootfs prevents the pod from starting. To enable it, also mount emptyDir volumes at those paths. |
+| postgres.persistence.annotations | object | `{}` | Annotations for the PVC created from the StatefulSet's `volumeClaimTemplates` (ignored when `existingClaim` is set). StatefulSet PVCs already outlive the StatefulSet and are not pruned by Helm or Argo CD. Changing this on an installed release hits the same immutability as `existingClaim`. |
+| postgres.persistence.existingClaim | string | `""` | Name of a pre-existing PersistentVolumeClaim to mount as the PostgreSQL data directory. When set, the StatefulSet drops its `volumeClaimTemplates` and mounts this claim through `volumes:` instead (PostgreSQL always runs one replica). `size`, `storageClass` and `annotations` are then unused. StatefulSet `volumeClaimTemplates` are immutable, so switching an installed release to or from this value needs `kubectl delete statefulset <fullname>-postgres --cascade=orphan` before the upgrade. To keep the data, point it at the existing `postgres-data-<fullname>-postgres-0` claim. |
+| postgres.podAnnotations | object | `{}` | Annotations added to the PostgreSQL pod template, for example cluster-autoscaler.kubernetes.io/safe-to-evict: "false" (#334). |
 | postgres.tolerations | list | `[]` | Per-component scheduling (overrides global) |
-| route | object | `{"annotations":{},"dtrack":{"enabled":false},"enabled":false,"host":"","timeout":"300s","tls":{"enabled":true,"insecureEdgeTerminationPolicy":"Redirect","termination":"edge"}}` | OpenShift Route configuration Alternative to ingress for OpenShift clusters, whose HAProxy router serves Route objects rather than a Kubernetes Ingress controller. Disabled by default; the OpenShift values overlay (values-openshift.yaml) turns it on and turns ingress off. Do not enable both route and ingress for the same host. |
+| route | object | `{"annotations":{},"dtrack":{"corsAllowOrigin":"","enabled":false},"enabled":false,"host":"","timeout":"300s","tls":{"enabled":true,"insecureEdgeTerminationPolicy":"Redirect","termination":"edge"}}` | OpenShift Route configuration Alternative to ingress for OpenShift clusters, whose HAProxy router serves Route objects rather than a Kubernetes Ingress controller. Disabled by default; the OpenShift values overlay (values-openshift.yaml) turns it on and turns ingress off. Do not enable both route and ingress for the same host. |
 | route.annotations | object | `{}` | Extra annotations applied to every Route. A haproxy.router.openshift.io/timeout set here overrides route.timeout. |
-| route.dtrack.enabled | bool | `false` | Publish a /dtrack Route to the bundled Dependency-Track service. Mirrors ingress.dtrack.enabled; only has effect when dependencyTrack.enabled is true. |
+| route.dtrack.corsAllowOrigin | string | `""` | Dependency-Track ALPINE_CORS_ALLOW_ORIGIN when exposed through the /dtrack Route. Empty derives the origin from route.host: https://<host> when route.tls.enabled, otherwise http://<host>. Set "*" or another origin to override. |
+| route.dtrack.enabled | bool | `false` | Publish a /dtrack Route to the bundled Dependency-Track service. Mirrors ingress.dtrack.enabled; only has effect when dependencyTrack.enabled is true. Also enables Dependency-Track's CORS settings (ALPINE_CORS_*), as ingress.dtrack and httpRoute.dtrack do. |
 | route.host | string | `""` | External hostname shared by every Route, e.g. artifacts.apps.<cluster-domain>. Required when route.enabled (falls back to fleet.host in fleet mode). A router-generated hostname is not supported: the router would give each of the per-path Routes its own hostname and the path fan-out would fall apart. |
 | route.timeout | string | `"300s"` | HAProxy server timeout, rendered as the haproxy.router.openshift.io/timeout annotation on every Route. The router default is 30s, which cuts off large artifact uploads and downloads; 300s matches ingress.proxyReadTimeoutSeconds. Empty omits the annotation. |
 | route.tls.enabled | bool | `true` | Serve the Routes over TLS. edge termination uses the router's default certificate unless you supply your own via annotations/secret. |
 | route.tls.insecureEdgeTerminationPolicy | string | `"Redirect"` | What to do with plain-HTTP requests. Redirect sends them to HTTPS. |
 | route.tls.termination | string | `"edge"` | TLS termination. Only `edge` is supported: the chart's Services speak plain HTTP (so reencrypt has nothing to re-encrypt to), and passthrough Routes cannot carry the per-path spec.path this chart relies on. |
-| scannerAdapter | object | `{"affinity":{},"cacheSizeLimit":"2Gi","containerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"enabled":true,"env":{"SCANNER_TRIVY_INSECURE":"true"},"image":{"pullPolicy":"IfNotPresent","repository":"ghcr.io/artifact-keeper/artifact-keeper-scanner-adapter","tag":"1.2.11"},"nodeSelector":{},"podSecurityContext":{"fsGroup":10000,"runAsNonRoot":true,"runAsUser":10000},"resources":{"limits":{"cpu":"1","ephemeral-storage":"2Gi","memory":"1Gi"},"requests":{"cpu":"100m","ephemeral-storage":"128Mi","memory":"128Mi"}},"tmpSizeLimit":"1Gi","tolerations":[],"topologySpreadConstraints":[]}` | In-house Trivy scanner-adapter Stateless Harbor-protocol scanner-adapter (image artifact-keeper-scanner-adapter) that the backend calls over HTTP via TRIVY_ADAPTER_URL for container-image Trivy scans. It pulls the target image from the AK registry per request and runs Trivy in-process, so it needs no Redis and no persistent storage — a single replica is fine. The image is multi-arch (amd64 + arm64), so there is no arch-pinned nodeSelector; leave it enabled on arm64 clusters too. Default enabled: true (recommended for amd64 and supported on arm64). This is separate from the `trivy` server above, which stays on TRIVY_URL for the fs/incus scan path. |
+| scannerAdapter | object | `{"affinity":{},"cacheSizeLimit":"2Gi","containerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"enabled":true,"env":{"SCANNER_TRIVY_INSECURE":"true"},"image":{"pullPolicy":"IfNotPresent","repository":"ghcr.io/artifact-keeper/artifact-keeper-scanner-adapter","tag":"1.5.2"},"nodeSelector":{},"podSecurityContext":{"fsGroup":10000,"runAsNonRoot":true,"runAsUser":10000},"proxy":{"enabled":true,"existingSecret":"","httpProxy":"","httpsProxy":"","noProxy":""},"resources":{"limits":{"cpu":"1","ephemeral-storage":"2Gi","memory":"1Gi"},"requests":{"cpu":"100m","ephemeral-storage":"128Mi","memory":"128Mi"}},"tmpSizeLimit":"1Gi","tolerations":[],"topologySpreadConstraints":[]}` | In-house Trivy scanner-adapter Stateless Harbor-protocol scanner-adapter (image artifact-keeper-scanner-adapter) that the backend calls over HTTP via TRIVY_ADAPTER_URL for container-image Trivy scans. It pulls the target image from the AK registry per request and runs Trivy in-process, so it needs no Redis and no persistent storage — a single replica is fine. The image is multi-arch (amd64 + arm64), so there is no arch-pinned nodeSelector; leave it enabled on arm64 clusters too. Default enabled: true (recommended for amd64 and supported on arm64). This is separate from the `trivy` server above, which stays on TRIVY_URL for the fs/incus scan path. |
 | scannerAdapter.cacheSizeLimit | string | `"2Gi"` | Writable scratch for image-layer extraction and the Trivy DB cache. emptyDir (no PVC) because the adapter is stateless. |
 | scannerAdapter.env | object | `{"SCANNER_TRIVY_INSECURE":"true"}` | Extra environment for the adapter. SCANNER_TRIVY_INSECURE defaults to "true" because the adapter reaches the AK registry over the plain-HTTP in-cluster Service endpoint; set to "false" if the adapter pulls from a TLS-terminated registry it can verify. |
-| scannerAdapter.image.tag | string | `"1.2.11"` | The scanner-adapter is versioned independently of the AK backend/web/edge images (its own `1.2.x` line; there is no `scanner-adapter:<appVersion>`). Pin the exact adapter release that the pinned backend release ships with, so every node runs the same digest: the floating `1`/`1.2`/`latest` tags move on each adapter release and, combined with pullPolicy IfNotPresent, would leave nodes on whichever build they first cached. Repoint this alongside backend.image.tag. The deployment renders the tag as `tag | default .Chart.AppVersion`, so leaving this empty ("") would fall back to appVersion and pull a non-existent tag — keep it pinned. |
+| scannerAdapter.image.tag | string | `"1.5.2"` | The scanner-adapter is versioned independently of the AK backend/web/edge images (its own `1.x` line; there is no `scanner-adapter:<appVersion>`). Pin the exact adapter release that the pinned backend release ships with, so every node runs the same digest: the floating `1`/`1.5`/`latest` tags move on each adapter release and, combined with pullPolicy IfNotPresent, would leave nodes on whichever build they first cached. Repoint this alongside backend.image.tag. The deployment renders the tag as `tag | default .Chart.AppVersion`, so leaving this empty ("") would fall back to appVersion and pull a non-existent tag — keep it pinned. Backend 1.11.10 ships adapter 1.5.2, whose bundled trivy is 0.76.0 (image 0.76.0-r3, go-jose 4.1.6); when the adapter is pointed at the chart's trivy server (SCANNER_TRIVY_SERVER), trivy.image.tag must be the same trivy release or the adapter refuses to scan. |
+| scannerAdapter.proxy | object | `{"enabled":true,"existingSecret":"","httpProxy":"","httpsProxy":"","noProxy":""}` | Egress proxy for the scanner-adapter: inherits global.proxy field by field (noProxy is appended to the global list). Fetches the Trivy DB, so it usually needs egress; set enabled: false to cut it off. |
 | scannerAdapter.tolerations | list | `[]` | Per-component scheduling (overrides global). Do NOT arch-pin here; the image is multi-arch. |
-| secrets | object | `{"existingSecret":"","jwtSecret":"","migrationEncryptionKey":"","migrationEncryptionKeyEnabled":false,"s3AccessKey":"","s3SecretKey":"","smtpPassword":"","webhookSecretKey":"","webhookSecretKeyEnabled":false}` | Secrets These are development defaults. For production, override via --set or use existingSecret references. Never commit real credentials here. |
+| secrets | object | `{"existingSecret":"","generate":true,"jwtSecret":"","migrationEncryptionKey":"","migrationEncryptionKeyEnabled":false,"s3AccessKey":"","s3SecretKey":"","smtpPassword":"","ssoEncryptionKey":"","ssoEncryptionKeyEnabled":false,"webhookSecretKey":"","webhookSecretKeyEnabled":false}` | Secrets These are development defaults. For production, override via --set or use existingSecret references. Never commit real credentials here. |
 | secrets.existingSecret | string | `""` | Name of an existing Secret that already holds the core application credentials (JWT_SECRET, and DATABASE_URL/POSTGRES_PASSWORD when the chart would otherwise manage them). When set, the chart does not render its own Secret and all workloads read from this Secret instead, so the values under `secrets` and `postgres.auth.password` are not required. Useful for GitOps and secret-manager workflows where the Secret is provisioned out of band. Optional encryption keys are wired separately using the *Enabled flags below, or backend.environmentSecrets for custom Secret/key names. |
+| secrets.generate | bool | `true` | Generate secrets.jwtSecret and postgres.auth.password when they are left empty, and keep them across upgrades by reading them back from the chart's Secret. A value you supply always wins, and this doesn't apply with existingSecret or External Secrets. Reading the Secret needs a live cluster: Argo CD and plain `helm template` generate new values on every render, and a new Postgres password stops matching the existing database, so with those tools set both values or use existingSecret. While it holds a generated value, the chart's Secret has helm.sh/resource-policy: keep, so helm uninstall leaves it in place. Set false to fail the render when a value is missing, as values-production.yaml and values-staging.yaml do. See "Generated credentials" in the README. |
 | secrets.migrationEncryptionKeyEnabled | bool | `false` | Inject MIGRATION_ENCRYPTION_KEY from secrets.existingSecret without an inline value. Must be a boolean; true requires existingSecret and externalSecrets.enabled=false. The key must exist. False preserves value-based injection; it does not disable a nonempty migrationEncryptionKey. |
+| secrets.ssoEncryptionKey | string | `""` | SSO_ENCRYPTION_KEY: the key the backend encrypts stored SSO provider secrets (OIDC client secrets, LDAP bind passwords) and upstream repository credentials with. Empty (the default) sets nothing, and the backend falls back to JWT_SECRET, so rotating the JWT secret also breaks those stored values. Any non-empty string works; use a random value such as `openssl rand -hex 32`. The chart never generates it. WARNING: setting or changing it on an existing install re-keys: SSO secrets and upstream credentials stored under the previous key (JWT_SECRET when this was unset) can no longer be decrypted. Set it at first install, or re-enter those secrets and credentials after enabling it. With existingSecret, a nonempty value still enables the reference for compatibility; prefer ssoEncryptionKeyEnabled. |
+| secrets.ssoEncryptionKeyEnabled | bool | `false` | Inject SSO_ENCRYPTION_KEY from secrets.existingSecret without an inline value. Must be a boolean; true requires existingSecret and externalSecrets.enabled=false. The key must exist. False preserves value-based injection; it does not disable a nonempty ssoEncryptionKey. The re-keying warning on ssoEncryptionKey applies. |
 | secrets.webhookSecretKeyEnabled | bool | `false` | Inject AK_WEBHOOK_SECRET_KEY from secrets.existingSecret without an inline value. Must be a boolean; true requires existingSecret and externalSecrets.enabled=false. The key must exist. False preserves value-based injection; it does not disable a nonempty webhookSecretKey. |
 | serviceMonitor | object | `{"enabled":false,"interval":"30s","labels":{},"scrapeTimeout":"10s"}` | Prometheus ServiceMonitor |
-| serviceMonitor.labels | object | `{}` | Extra labels on the ServiceMonitor, e.g. `release: kube-prometheus-stack` so a Prometheus whose serviceMonitorSelector requires it picks this up. |
-| trivy | object | `{"affinity":{},"containerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"db":{"javaRepository":"","preseed":{"enabled":false},"repository":"","skipUpdate":false},"enabled":true,"image":{"repository":"aquasec/trivy","tag":"0.62.1"},"initContainerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"nodeSelector":{},"persistence":{"size":"5Gi","storageClass":""},"podSecurityContext":{"fsGroup":10000,"runAsNonRoot":true,"runAsUser":10000},"resources":{"limits":{"cpu":"1","ephemeral-storage":"3Gi","memory":"2Gi"},"requests":{"cpu":"250m","ephemeral-storage":"128Mi","memory":"256Mi"}},"tmpSizeLimit":"2Gi","tolerations":[],"topologySpreadConstraints":[]}` | Trivy vulnerability scanner Runs as a persistent server that the backend calls for image/SBOM scans. Uses a PVC for its vulnerability database cache. The deployment uses Recreate strategy because the cache directory uses a file lock that prevents concurrent access from two pods. |
+| serviceMonitor.labels | object | `{}` | Extra labels on the ServiceMonitor, for a Prometheus whose serviceMonitorSelector requires them (kube-prometheus-stack selects `release: <its release name>` by default). |
+| trivy | object | `{"affinity":{},"containerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"db":{"javaRepository":"","preseed":{"enabled":false},"repository":"","skipUpdate":false},"enabled":true,"image":{"repository":"ghcr.io/artifact-keeper/trivy","tag":"0.76.0-r3@sha256:e324a1cc4ad525ed0a39d623a277a12cd138fd8ee2a88f60f776ae5a40b5b0ce"},"initContainerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"nodeSelector":{},"persistence":{"annotations":{},"existingClaim":"","size":"5Gi","storageClass":""},"podSecurityContext":{"fsGroup":10000,"runAsNonRoot":true,"runAsUser":10000},"proxy":{"enabled":true,"existingSecret":"","httpProxy":"","httpsProxy":"","noProxy":""},"resources":{"limits":{"cpu":"1","ephemeral-storage":"3Gi","memory":"2Gi"},"requests":{"cpu":"250m","ephemeral-storage":"128Mi","memory":"256Mi"}},"tmpSizeLimit":"2Gi","tolerations":[],"topologySpreadConstraints":[]}` | Trivy vulnerability scanner Runs as a persistent server that the backend calls for image/SBOM scans. Uses a PVC for its vulnerability database cache. The deployment uses Recreate strategy because the cache directory uses a file lock that prevents concurrent access from two pods. |
 | trivy.db | object | `{"javaRepository":"","preseed":{"enabled":false},"repository":"","skipUpdate":false}` | Vulnerability database settings. Trivy downloads its vulnerability DB lazily (on first scan), pulling an OCI artifact from a registry. The upstream default (ghcr.io/aquasecurity/trivy-db) is anonymous-pull and gets rate-limited; clusters that cannot reach it (or that hit the rate limit) end up with no DB, which fails the pinned-cve-gate pre-flight. To make the fetch reliable we (a) point at a configurable mirror and (b) pre-seed the DB with an init container so it is present before the server accepts scans. |
 | trivy.db.javaRepository | string | `""` | OCI repository for the Java DB (used by jar/war scanning). Same opt-in semantics as `repository` above. |
 | trivy.db.preseed | object | `{"enabled":false}` | Run an init container that downloads the DB into the cache PVC before the server starts. Makes the DB present on rollout instead of on first scan. Default OFF because the preseed download from mirror.gcr.io can exceed Helm's default install timeout in some clusters, leaving the Trivy Deployment stuck at Available 0/1 (see artifact-keeper-iac #137). The server still fetches the DB lazily on first scan via TRIVY_DB_REPOSITORY, so this is opt-in for now. |
 | trivy.db.repository | string | `""` | OCI repository for the vulnerability DB. Override to an internal mirror the cluster can reach. Default empty means Trivy uses its built-in ghcr.io default, which has historically been the only reliably-reachable source from our gate cluster. mirror.gcr.io was tried in #136 but caused the server to hang at Available 0/1 even with preseed off (see artifact-keeper-iac #140), so the mirror is now opt-in by override rather than the default. |
 | trivy.db.skipUpdate | bool | `false` | Skip the periodic in-server DB refresh. Leave false so the server keeps the DB fresh from the configured mirror; set true for fully air-gapped clusters where the DB is seeded out of band. |
+| trivy.image.tag | string | `"0.76.0-r3@sha256:e324a1cc4ad525ed0a39d623a277a12cd138fd8ee2a88f60f776ae5a40b5b0ce"` | Trivy server image: the project's rebuild of upstream Trivy v0.76.0 (same release, patched Go dependencies), pinned by digest. Move it together with scannerAdapter.image.tag: with SCANNER_TRIVY_SERVER set, the adapter refuses a server whose trivy release differs from its bundled client (0.76.0 for adapter 1.5.2, the pair backend 1.11.10 ships), its /probe/ready stays 503 and scans fail closed with "client/server mode needs matching releases". |
+| trivy.persistence.annotations | object | `{}` | Annotations for the Trivy cache PVC the chart creates (ignored when `existingClaim` is set). For example `helm.sh/resource-policy: keep` to keep it on `helm uninstall`, or `argocd.argoproj.io/sync-options: Prune=false` so Argo CD never prunes it. |
+| trivy.persistence.existingClaim | string | `""` | Name of a pre-existing PersistentVolumeClaim to mount as the Trivy cache instead of the chart-created `<fullname>-trivy-cache` PVC. `size`, `storageClass` and `annotations` are then unused. |
+| trivy.proxy | object | `{"enabled":true,"existingSecret":"","httpProxy":"","httpsProxy":"","noProxy":""}` | Egress proxy for Trivy (server and the trivy-db-init container): inherits global.proxy field by field (noProxy is appended to the global list). Trivy fetches its vuln DB, so it usually needs egress; set enabled: false only if the DB is mirrored in-cluster. |
 | trivy.tmpSizeLimit | string | `"2Gi"` | sizeLimit for the /tmp emptyDir, where Trivy stages the vulnerability DB download (the container sets TMPDIR=/tmp).  This was hardcoded at 256Mi and got the server EVICTED — "Usage of EmptyDir volume "tmp" exceeds the limit "256Mi"" — irregularly, 12h to 14d apart, leaving Failed pods behind. Measured on trivy 0.62.1 against the live DB, peak /tmp usage during a refresh is 231.7 MiB (237240 KiB): 90.5% of the old cap, about 24 MiB of headroom. The DB grows over time, so some refreshes fit and some tipped over — which is why it read as a flake rather than a sizing bug.  Note the extracted trivy.db (~1.1 GiB) does NOT pass through here; it is written into --cache-dir on the PVC. Only the compressed artifact (~104 MiB) plus staging overhead lands in /tmp, which is why this is sized in the low GiB instead of tracking full DB size. 2Gi is ~8.8x the measured peak.  Re-measure with `trivy image --download-db-only` while sampling `du -sk /tmp`. |
 | trivy.tolerations | list | `[]` | Per-component scheduling (overrides global) |
-| web | object | `{"affinity":{},"containerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"enabled":true,"env":{"NEXT_PUBLIC_API_URL":"","NODE_ENV":"production"},"image":{"pullPolicy":"Always","repository":"ghcr.io/artifact-keeper/artifact-keeper-web","tag":"1.10.1"},"nodeSelector":{},"podDisruptionBudget":{"enabled":false,"minAvailable":1},"podLabels":{},"podSecurityContext":{"fsGroup":1000,"runAsNonRoot":true,"runAsUser":1000},"replicaCount":1,"resources":{"limits":{"cpu":"1","ephemeral-storage":"2Gi","memory":"1Gi"},"requests":{"cpu":"250m","ephemeral-storage":"256Mi","memory":"256Mi"}},"service":{"annotations":{},"port":3000,"type":"ClusterIP"},"tolerations":[],"topologySpreadConstraints":[]}` | Next.js web frontend |
-| web.image.tag | string | `"1.10.1"` | Web image tag. Defaults to the web frontend's latest published release, which drifts from the backend's version because the two release independently (only the major must align for API compatibility). Leave empty ("") to fall back to the chart's appVersion (see backend.image.tag). Note the appVersion tracks the backend generation, so an empty web tag can resolve to a version the web image has not published; pin it here instead. Concretely: appVersion is currently 1.10.1 and the web frontend happens to have published 1.10.1 alongside it, but that alignment is coincidental and will not hold for the next release -- keep this pinned rather than empty. Because the two components version independently, expect the appVersion fallback to be unusable for web most of the time -- keep this pinned. |
+| web | object | `{"affinity":{},"annotations":{},"backendAlias":{"enabled":true},"containerSecurityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"enabled":true,"enforceHttps":false,"env":{"NEXT_PUBLIC_API_URL":"","NODE_ENV":"production"},"image":{"pullPolicy":"Always","repository":"ghcr.io/artifact-keeper/artifact-keeper-web","tag":"1.11.2"},"nodeSelector":{},"podAnnotations":{},"podDisruptionBudget":{"enabled":false,"minAvailable":1},"podLabels":{},"podSecurityContext":{"fsGroup":1000,"runAsNonRoot":true,"runAsUser":1000},"proxy":{"enabled":false,"existingSecret":"","httpProxy":"","httpsProxy":"","noProxy":""},"replicaCount":1,"resources":{"limits":{"cpu":"1","ephemeral-storage":"2Gi","memory":"1Gi"},"requests":{"cpu":"250m","ephemeral-storage":"256Mi","memory":"256Mi"}},"service":{"annotations":{},"port":3000,"type":"ClusterIP"},"tolerations":[],"topologySpreadConstraints":[]}` | Next.js web frontend |
+| web.annotations | object | `{}` | Annotations added to the web Deployment metadata. See backend.annotations. |
+| web.backendAlias.enabled | bool | `true` | Render a Service literally named `backend` (type ExternalName, pointing at this release's backend Service) in the release namespace. It exists for web images before 1.1.0, which baked http://backend:8080 into their rewrites at build time. Web 1.1.0 and later read BACKEND_URL at runtime, and the chart always sets it to the release-qualified backend Service, so the default web image does not need the alias. The alias claims the bare `backend` name in the namespace: disable it in shared namespaces or when several releases share one namespace, where that name collides. Disabling also drops `backend` from the generated NO_PROXY list. |
+| web.enforceHttps | bool | `false` | Enable HSTS and CSP upgrade-insecure-requests in the web container. Set true when browsers reach the UI over HTTPS, including TLS termination at an ingress, Gateway or load balancer. Keep false for plain-HTTP access. |
+| web.image.tag | string | `"1.11.2"` | Web image tag. Defaults to the web frontend's latest published release, which drifts from the backend's version because the two release independently (only the major must align for API compatibility). Leave empty ("") to fall back to the chart's appVersion (see backend.image.tag). Note the appVersion tracks the backend generation, so an empty web tag can resolve to a version the web image has not published; pin it here instead. Concretely: appVersion is currently 1.11.10 while the web frontend's latest release is 1.11.2, so an empty tag here would resolve to a web image that does not exist -- keep this pinned rather than empty. Because the two components version independently, expect the appVersion fallback to be unusable for web most of the time -- keep this pinned. |
+| web.podAnnotations | object | `{}` | Annotations added to the web pod template. See backend.podAnnotations. |
 | web.podLabels | object | `{}` | Extra labels merged onto the web pod template. See backend.podLabels. |
+| web.proxy | object | `{"enabled":false,"existingSecret":"","httpProxy":"","httpsProxy":"","noProxy":""}` | No egress proxy: the web UI only talks to the backend in-cluster, so it needs no outbound access. Set enabled: true to route it via global.proxy; the other fields then override global.proxy field by field. |
 | web.service.annotations | object | `{}` | Extra annotations for the Service. Needed for AWS ALB with target-type=ip, whose default probe is `GET /` and would fail here:   alb.ingress.kubernetes.io/healthcheck-path: /   alb.ingress.kubernetes.io/success-codes: "200" |
 | web.tolerations | list | `[]` | Per-component scheduling (overrides global) |
+
+## Additional backend volumes
+
+Use `backend.extraVolumes` and `backend.extraVolumeMounts` to mount existing
+ConfigMaps, Secrets, PVCs, projected volumes or other Kubernetes volume sources.
+For example, mount a custom CA bundle for outbound HTTPS/OIDC connections:
+
+```yaml
+backend:
+  env:
+    CUSTOM_CA_CERT_PATH: /etc/artifact-keeper/custom-ca/ca.pem
+  extraVolumes:
+    - name: custom-ca
+      configMap:
+        name: backend-custom-ca
+        items:
+          - key: ca.pem
+            path: ca.pem
+  extraVolumeMounts:
+    - name: custom-ca
+      mountPath: /etc/artifact-keeper/custom-ca
+      readOnly: true
+```
+
+Create the referenced ConfigMap before deploying. The chart does not create
+resources referenced by these lists. Entries are rendered verbatim and appended
+to the existing volumes and mounts; both lists default to `[]`. Additional
+mounts apply only to the backend container; init containers such as the cosign
+verifier do not receive them. Mounts can also reference existing pod volumes.
+Use unique volume names and mount paths so they do not conflict with the built-in
+storage, temporary, scan-workspace or shared-config mounts.
+
+## Web HTTPS security headers
+
+Set `web.enforceHttps: true` when browsers reach the web UI over HTTPS, including
+when an ingress, Gateway or load balancer terminates TLS and forwards HTTP to
+the web pod. This passes `AK_ENFORCE_HTTPS=true` to the web container to enable
+its HSTS and CSP `upgrade-insecure-requests` headers. It defaults to `false` for
+plain-HTTP deployments and is not inferred from the chart's routing settings.
 
 ## Container registries
 
@@ -356,7 +473,7 @@ or set it to `""` unless you intend to rewrite every image.
 
 ## Encryption Keys in an Existing Secret
 
-If an operator-supplied Secret contains the optional migration and webhook
+If an operator-supplied Secret contains the optional migration, webhook and SSO
 encryption keys, opt into their environment references without putting plaintext
 keys or placeholder credentials in Helm values:
 
@@ -365,20 +482,21 @@ secrets:
   existingSecret: application-credentials
   migrationEncryptionKeyEnabled: true
   webhookSecretKeyEnabled: true
+  ssoEncryptionKeyEnabled: true   # read the re-keying warning below first
 ```
 
-The backend reads `MIGRATION_ENCRYPTION_KEY` and `AK_WEBHOOK_SECRET_KEY` from that
-Secret in the release namespace. The chart does not create a Secret or copy
+The backend reads `MIGRATION_ENCRYPTION_KEY`, `AK_WEBHOOK_SECRET_KEY` and
+`SSO_ENCRYPTION_KEY` from that Secret in the release namespace. The chart does not create a Secret or copy
 credential values into the rendered manifests. These references are required:
 if an enabled key is missing, Kubernetes prevents the backend container from
-starting. Both flags default to `false`, so existing Secrets without these
-optional keys keep working. Enable either flag independently.
+starting. All three flags default to `false`, so existing Secrets without these
+optional keys keep working. Enable each flag independently.
 
 The flags must be YAML booleans, not strings such as `"false"`. Setting a flag to
 `true` requires `secrets.existingSecret` and `externalSecrets.enabled: false`;
 otherwise rendering fails. They only opt into existing-Secret references:
-`false` does not override a nonempty `secrets.migrationEncryptionKey` or
-`secrets.webhookSecretKey`. Chart-managed Secrets still use those inline values,
+`false` does not override a nonempty `secrets.migrationEncryptionKey`,
+`secrets.webhookSecretKey` or `secrets.ssoEncryptionKey`. Chart-managed Secrets still use those inline values,
 and legacy existing-Secret configurations with nonempty placeholder values still
 work. Replace placeholders with the flags above. With External Secrets Operator,
 continue setting the corresponding `externalSecrets.secrets.*` provider paths
@@ -402,12 +520,33 @@ backend:
 ```
 
 Leave the corresponding inline value empty and flag `false` (or the ESO path
-empty) when using `backend.environmentSecrets`. For these two environment
+empty) when using `backend.environmentSecrets`. For these three environment
 variables, multiple definitions across chart secret wiring, `backend.env`, or
 `backend.environmentSecrets` fail rendering; choose one source per variable.
 An `optional: true` reference permits startup without the key but leaves the
 feature unavailable. Helm does not look up the supplied Secret, so these options
 also work with offline `helm template`, ArgoCD, and Flux.
+
+### SSO encryption key
+
+The backend encrypts stored SSO provider secrets (OIDC client secrets and LDAP
+bind passwords) and upstream repository credentials with
+`SSO_ENCRYPTION_KEY`. When it is unset, which is the chart default, the backend
+falls back to `JWT_SECRET`, so rotating the JWT secret also makes those stored
+values undecryptable. To give them their own key, set it from any of the same
+sources as the keys above: `secrets.ssoEncryptionKey` (chart-managed Secret),
+`secrets.ssoEncryptionKeyEnabled: true` (key `SSO_ENCRYPTION_KEY` in
+`secrets.existingSecret`), `externalSecrets.secrets.ssoEncryptionKey`
+(provider property `sso-encryption-key`), or `backend.environmentSecrets`.
+Use a random value such as `openssl rand -hex 32`. The chart does not generate
+one.
+
+> **Setting this on an existing install re-keys.** SSO secrets and upstream
+> credentials already stored were encrypted with `JWT_SECRET` (or the previous
+> `SSO_ENCRYPTION_KEY`), and the backend cannot decrypt them under the new key.
+> Set the key at first install. On an existing install, plan to re-enter every
+> SSO provider secret and upstream repository credential after enabling it, and
+> never change the key afterwards without doing the same.
 
 Run the offline regression tests from the repository root with Helm and the
 Python dependencies in `.github/scripts/requirements.txt` installed:
@@ -415,6 +554,69 @@ Python dependencies in `.github/scripts/requirements.txt` installed:
 ```bash
 python3 .github/scripts/test-encryption-secret-refs.py
 ```
+
+## Egress Proxy
+
+Clusters that only allow outbound traffic through an HTTP(S) proxy set it once
+under `global.proxy`; the chart renders `HTTP_PROXY`, `HTTPS_PROXY` and
+`NO_PROXY` (plus the lowercase forms) into every component that reaches outside
+the cluster: backend (including its cosign `verify-image-signature` init
+container), edge, Trivy (server and `trivy-db-init`), scanner-adapter,
+Dependency-Track and the buildkitd image builder. The web UI and OpenSearch
+never call out and default to `proxy.enabled: false`.
+
+```yaml
+global:
+  proxy:
+    httpProxy: http://proxy.corp.example:3128
+    httpsProxy: http://proxy.corp.example:3128
+    noProxy: .corp.example,minio.storage.svc
+```
+
+`NO_PROXY` is generated: loopback, the cluster DNS suffixes (`.svc`,
+`.svc.cluster.local`, `.cluster.local`), the short Service name of every enabled
+in-chart component (including the bare `backend` alias, unless
+`web.backendAlias.enabled` is false), and the Postgres Service or `externalDatabase.host`. `noProxy` only
+needs to add hosts the chart cannot know about. In particular an in-cluster S3
+endpoint such as MinIO is **not** detected: add its hostname to `noProxy`, or
+the backend's storage traffic takes the proxy. The same goes for the shared
+Services of a fleet-mode install.
+
+Each component carries a `<component>.proxy` block with the same fields. They
+override `global.proxy` **field by field**: a component that only sets
+`httpsProxy` still inherits the global `httpProxy`, and a component `noProxy`
+is appended to the global list rather than replacing it. `proxy.enabled: false`
+takes a component off the proxy entirely; with a proxy-only egress policy that
+leaves it no route out of the cluster, so use it for components that must not
+call out (the default for web and OpenSearch).
+
+```yaml
+global:
+  proxy:
+    httpProxy: http://proxy.corp.example:3128
+    httpsProxy: http://proxy.corp.example:3128
+trivy:
+  proxy:
+    httpsProxy: http://scanner-proxy.corp.example:3128   # overrides only HTTPS_PROXY
+    noProxy: mirror.corp.example                         # global list + this
+dependencyTrack:
+  proxy:
+    enabled: false                                        # vuln feeds mirrored in-cluster
+```
+
+Proxies that need credentials in the URL can come from a Secret instead of the
+values file: point `global.proxy.existingSecret` (or `<component>.proxy.existingSecret`)
+at a Secret in the release namespace with `HTTP_PROXY` and `HTTPS_PROXY` keys and
+the chart renders `secretKeyRef`s. A literal `httpProxy`/`httpsProxy` still wins
+for its own variable, so the two forms can be mixed. Helm does not look the Secret
+up, so offline `helm template`, ArgoCD and Flux all work.
+
+The helper also owns these variable names: a leftover `HTTP_PROXY`, `HTTPS_PROXY`
+or `NO_PROXY` (either case) in `backend.env`, `edge.env` or `scannerAdapter.env`
+is skipped while the proxy is active, so the container never defines the
+variable twice. Dependency-Track reads the lowercase `http_proxy`/`https_proxy`/
+`no_proxy` forms itself; the chart emits both cases for every component so that
+Java, Go, Rust and Node runtimes all pick the proxy up.
 
 ## Deployment Profiles
 
@@ -478,6 +680,8 @@ Two overlay files support multi-instance mesh testing via ArgoCD:
 - `values-mesh-peer.yaml` configures peer instances with reduced resource footprints.
 
 Both use `fullnameOverride` for stable service names and disable non-essential components (Trivy, DependencyTrack, ingress).
+
+Each mesh member is its own Helm release with its own database and storage. Raising `backend.replicaCount` does not create mesh peers; see [replicaCount vs peer replication](#replicacount-vs-peer-replication) and the [mesh bootstrap guide](../../docs/mesh-bootstrap.md).
 
 ## Architecture
 
@@ -555,13 +759,35 @@ Only switch to RollingUpdate when the backend holds no ReadWriteOnce volume: wit
 
 | Volume | Gated by | To free it |
 |--------|----------|------------|
-| `storage` (`/data/storage`, `/data/backups`, `/data/plugins`) | `backend.persistence.enabled` | Keep artifacts in object storage (`STORAGE_BACKEND=s3`) and set it to `false`, so each pod then gets an emptyDir for backup/plugin scratch |
+| `storage` (`/data/storage`, `/data/backups`, `/data/plugins`) | `backend.persistence.enabled` | Keep artifacts in object storage (`STORAGE_BACKEND=s3`) and set it to `false`, so each pod gets either an emptyDir or, with `backend.persistence.ephemeral.enabled`, its own generic ephemeral PVC |
 | `scan-workspace` (`/scan-workspace`) | `backend.scanWorkspace.enabled` | Set it to `false`. Scanning keeps working, the workspace becomes a per-pod emptyDir of `scanWorkspace.size` |
 | `shared-config` (`/shared`) | `dependencyTrack.enabled` | Put it on a ReadWriteMany class: `backend.sharedConfig.accessModes: [ReadWriteMany]`, plus `backend.sharedConfig.storageClass` if the default class cannot do RWX. The DT bootstrap passes its API key to the backend through this PVC, so it cannot be turned off while DT is enabled |
 
 A zero-downtime rollout also needs at least two replicas, since one pod on its own still disappears while it restarts. Trivy, DependencyTrack, and single-replica OpenSearch keep their hardcoded Recreate regardless: their caches use a single-writer file lock, so two concurrent pods are unsafe whatever the volume's access mode.
 
 The backend uses two PVCs: one for artifact storage and one for scan workspace (temp files during security scans). Both can be sized independently.
+
+When object storage is the source of truth, disable the shared backend storage
+PVC. The default per-pod `emptyDir` is configurable, and a generic ephemeral
+volume can provide PVC-backed scratch space without sharing in-progress uploads
+between replicas:
+
+```yaml
+backend:
+  persistence:
+    enabled: false
+    ephemeral:
+      enabled: true
+      size: 20Gi
+      storageClass: managed-csi
+      accessModes:
+        - ReadWriteOnce
+```
+
+The generic ephemeral PVC is created and deleted with its backend pod. If you
+use the default `emptyDir` instead, set `backend.persistence.emptyDir.sizeLimit`
+and keep `backend.resources.limits.ephemeral-storage` above that value with
+headroom for container logs and the writable layer.
 
 | Component | Default Size | Purpose |
 |-----------|-------------|---------|
@@ -572,9 +798,64 @@ The backend uses two PVCs: one for artifact storage and one for scan workspace (
 | Trivy | 5Gi | Vulnerability database cache |
 | DependencyTrack | 5Gi | Internal vulnerability database |
 
+### Using pre-existing PersistentVolumeClaims
+
+Every PVC the chart creates can be replaced with a claim you manage yourself, for example one created outside the release so that deleting the release (or an Argo CD application) never deletes the data. Set `existingClaim` under the volume's persistence block. The chart then skips its own PVC and mounts the named claim everywhere its own claim was mounted. The claim must already exist in the release namespace; `size`, `storageClass`, `accessModes` and `annotations` for that volume are ignored.
+
+| Value | Replaces | Mounted by | Access mode needed |
+|-------|----------|------------|--------------------|
+| `backend.persistence.existingClaim` | `<fullname>-storage` | backend | ReadWriteOnce for one replica; ReadWriteMany for `backend.replicaCount` > 1, autoscaling, or `strategy.type: RollingUpdate` |
+| `backend.scanWorkspace.existingClaim` | `<fullname>-scan-workspace` | backend | Same as `storage`. A multi-replica backend normally sets `scanWorkspace.enabled: false` instead |
+| `backend.sharedConfig.existingClaim` | `<fullname>-shared-config` | backend and the Dependency-Track bootstrap Job | ReadWriteMany unless both always land on the same node, and for a multi-replica backend |
+| `postgres.persistence.existingClaim` | `postgres-data-<fullname>-postgres-0` (StatefulSet `volumeClaimTemplates`) | PostgreSQL (always one replica) | ReadWriteOnce |
+| `opensearch.persistence.existingClaim` | `<fullname>-opensearch` | OpenSearch, `replicaCount: 1` only | ReadWriteOnce |
+| `trivy.persistence.existingClaim` | `<fullname>-trivy-cache` | Trivy | ReadWriteOnce |
+| `dependencyTrack.persistence.existingClaim` | `<fullname>-dtrack` | Dependency-Track | ReadWriteOnce |
+| `imageBuilder.persistence.existingClaim` | `<fullname>-buildkitd-cache` | BuildKit daemon | ReadWriteOnce for one replica; ReadWriteMany if `imageBuilder.replicaCount` > 1 |
+
+```yaml
+backend:
+  persistence:
+    enabled: true
+    existingClaim: artifact-keeper-storage
+postgres:
+  persistence:
+    existingClaim: artifact-keeper-postgres
+```
+
+The render fails when an `existingClaim` cannot be honored:
+
+- `backend.persistence.existingClaim` with `backend.persistence.enabled: false`, or together with `backend.persistence.ephemeral.enabled` (the ephemeral mode creates one PVC per pod, so there is no shared claim to replace).
+- `backend.scanWorkspace.existingClaim` with `backend.scanWorkspace.enabled: false`, `opensearch.persistence.existingClaim` with `opensearch.persistence.enabled: false`, and `imageBuilder.persistence.existingClaim` with `imageBuilder.persistence.enabled: false`.
+- `opensearch.persistence.existingClaim` with `opensearch.replicaCount` > 1. A multi-node cluster is a StatefulSet whose `volumeClaimTemplates` give every node its own PVC, and a single claim cannot back several nodes.
+
+PostgreSQL is a single-replica StatefulSet, so with `postgres.persistence.existingClaim` the chart drops its `volumeClaimTemplates` and mounts the claim through `volumes:`. StatefulSet `volumeClaimTemplates` are immutable: switching an installed release to or from `existingClaim` needs `kubectl delete statefulset <fullname>-postgres --cascade=orphan` before `helm upgrade`. To keep the current data, set `existingClaim` to the claim the StatefulSet already created, `postgres-data-<fullname>-postgres-0`.
+
+To keep the chart-managed PVCs instead, annotate them. Each persistence block also takes `annotations` (default `{}`), for example:
+
+```yaml
+backend:
+  persistence:
+    annotations:
+      helm.sh/resource-policy: keep                       # helm uninstall leaves the PVC
+      argocd.argoproj.io/sync-options: Prune=false        # Argo CD never prunes it
+```
+
+The keys are `backend.persistence.annotations`, `backend.scanWorkspace.annotations`, `backend.sharedConfig.annotations`, `postgres.persistence.annotations`, `opensearch.persistence.annotations`, `trivy.persistence.annotations`, `dependencyTrack.persistence.annotations` and `imageBuilder.persistence.annotations`. For PostgreSQL and multi-node OpenSearch the annotations go on the StatefulSet's `volumeClaimTemplates`, so they only apply to PVCs created after they are set, and changing them on an installed release hits the same immutability as above. Those StatefulSet PVCs already survive the deletion of their StatefulSet, and neither Helm nor Argo CD prunes them.
+
 ## Ingress
 
 The chart creates a single Ingress resource that routes traffic to the backend and web frontend. By default it uses the `nginx` IngressClass with a 1024m proxy body size limit (for large artifact uploads) and 300-second timeouts.
+
+The body size and timeouts come from `ingress.maxBodySize`, `ingress.proxyReadTimeoutSeconds` and `ingress.proxySendTimeoutSeconds`, which render as `nginx.ingress.kubernetes.io/*` annotations. They render for `className: nginx`. For any other class they are left out, and the install notes warn about it. If another class name is served by ingress-nginx, opt it in, otherwise uploads hit the controller's default limit:
+
+```yaml
+ingress:
+  className: nginx-internal
+  nginxAnnotations: true
+```
+
+For a controller that isn't ingress-nginx, set the equivalent limits on the controller. A key you set in `ingress.annotations` always wins over the derived value.
 
 To enable TLS with cert-manager:
 
@@ -625,16 +906,35 @@ Helm rendering deliberately does not require live cluster discovery.
 TLS termination and `certificateRefs` belong to the existing Gateway listener.
 `ingress.tls` and Ingress annotations do not apply to HTTPRoute.
 
-> **Upload size and timeouts have no HTTPRoute equivalent.** On Ingress the
-> chart derives `nginx.ingress.kubernetes.io/proxy-body-size`,
+> **Upload size has no HTTPRoute equivalent, and timeouts are opt-in.** On
+> Ingress the chart derives `nginx.ingress.kubernetes.io/proxy-body-size`,
 > `proxy-read-timeout` and `proxy-send-timeout` from `ingress.maxBodySize`,
 > `ingress.proxyReadTimeoutSeconds` and `ingress.proxySendTimeoutSeconds`.
-> The HTTPRoute sets none of these, so large artifact uploads and long OCI
-> pushes are bound by your Gateway implementation's own request-size and
-> timeout defaults, which are often far lower. Configure them on the Gateway or
-> controller (for example an Envoy Gateway `ClientTrafficPolicy`/
-> `BackendTrafficPolicy`, or the equivalent policy of your implementation),
-> together with any redirects and other controller-specific policies.
+> The HTTPRoute sets no request-size limit, and by default no timeouts, so
+> large artifact uploads and long OCI pushes are bound by your Gateway
+> implementation's own defaults, which are often far lower. Configure request
+> size on the Gateway or controller (for example an Envoy Gateway
+> `ClientTrafficPolicy`/`BackendTrafficPolicy`, or the equivalent policy of
+> your implementation), together with any redirects and other
+> controller-specific policies.
+
+To lift the timeout for the backend routes, set `httpRoute.timeouts`. Both
+fields take Gateway API duration strings and render as `timeouts` on every rule
+that targets the backend (`/api`, `/v2`, `/health`, `/ready` and the package
+prefixes); the web `/` and `/dtrack` rules keep the Gateway default:
+
+```yaml
+httpRoute:
+  timeouts:
+    request: 0s          # no limit on the whole client exchange
+    backendRequest: 1h   # per request to the backend
+```
+
+`0s` disables a timeout. `backendRequest` may not exceed `request` unless
+`request` is `0s`, and malformed durations fail the render. The `timeouts`
+field needs the Gateway API v1.2.0 or later HTTPRoute CRD (standard channel);
+the v1.0 and v1.1 CRDs do not define it, so the API server drops it. Gateway API
+marks it Extended support, so confirm that your implementation honours it.
 
 Both exposure modes are optional, but enabling them simultaneously fails the
 render. HTTPRoute is likewise mutually exclusive with the OpenShift Routes
@@ -651,6 +951,21 @@ into rules of at most eight matches to also satisfy the older v1.0.0 schema
 catch-all in separate rules.
 Gateway API's most-specific match precedence keeps the catch-all from shadowing
 package routes.
+
+To route an additional prefix to the backend, for example one served by a
+backend plugin, list it in `backend.extraFormatPaths`. The Ingress, the
+HTTPRoute and the OpenShift Routes all take it from the same inventory:
+
+```yaml
+backend:
+  extraFormatPaths:
+    - /myformat
+```
+
+Each entry must be a single lowercase path segment. Repeating a built-in
+prefix, `/api`, `/v2`, `/health`, `/ready`, `/metrics`, `/dtrack` or another
+entry fails the render, as does a list long enough to push the HTTPRoute past
+the Gateway API limit of 16 rules.
 
 Dependency-Track exposure is a separate opt-in:
 `httpRoute.dtrack.enabled: true` requires `dependencyTrack.enabled: true` and
@@ -693,12 +1008,51 @@ When `cosign.enabled` is set to `true`, an init container verifies the backend i
 
 When `networkPolicy.enabled` is set to `true`, the chart creates NetworkPolicy resources that restrict traffic between components. Only the required communication paths are allowed (for example, backend to PostgreSQL, backend to OpenSearch on port 9200, and OpenSearch-to-OpenSearch transport on port 9300).
 
+**OpenSearch.** The bundled OpenSearch runs with its Security plugin disabled (`opensearch.disableSecurityPlugin: true`), so it has no authentication: whatever reaches port 9200 can read, change and delete the search index. Its NetworkPolicy therefore also renders when `networkPolicy.enabled` is `false`, through `opensearch.networkPolicy.enabled` (default `true`). It admits port 9200 only from the backend pods, plus any peers in `opensearch.networkPolicy.extraFrom`, and port 9300 only from OpenSearch pods. `NOTES.txt` warns while the plugin is off, and warns more loudly if both switches are off. A supported security-on profile, with TLS certificates and a generated admin password, is tracked in [#379](https://github.com/artifact-keeper/artifact-keeper-iac/issues/379). Setting `disableSecurityPlugin: false` with the chart's settings alone makes OpenSearch exit with "No SSL configuration found".
+
+**Prometheus.** The backend, web and edge policies admit scrapes from the namespace in `networkPolicy.monitoringNamespace` (default `monitoring`), or from the peers in `networkPolicy.monitoringPeers` when that is set. With `backend.metricsListener.enabled`, the ServiceMonitor scrapes the metrics listener port, and the backend policy admits that port as well as the HTTP port. kube-prometheus-stack often runs in another namespace, and it selects ServiceMonitors by its `release` label, which you can add with `serviceMonitor.labels`.
+
 ### Secrets Management
 
-For development, secrets are stored directly in the chart's Secret template. For production, two options exist:
+For development, the chart generates what it needs and stores it in its own Secret (see [Generated credentials](#generated-credentials)). For production, two options exist:
 
 1. **External overrides**: Pass secrets via `--set` flags or external values files that are not committed to version control.
 2. **External Secrets Operator**: Set `externalSecrets.enabled: true` to pull secrets from AWS Secrets Manager (or another provider) using ExternalSecret CRDs.
+
+#### Generated credentials
+
+When `secrets.jwtSecret` or `postgres.auth.password` is empty, the chart generates it and stores it in the `<fullname>-secrets` Secret. On later upgrades it reads the stored value back with `lookup`, so upgrades, including `--reuse-values`, never rotate it.
+
+While the Secret holds a generated value it has `helm.sh/resource-policy: keep`, because it holds the only copy and the Postgres PVC outlives the release. `helm uninstall`, or the rollback after a failed `--atomic` first install, leaves it in place, and the next install of the same release in that namespace reads the same values back. Helm lists it as kept when you uninstall. Delete it yourself when you no longer want it, along with the PVCs if you want a clean start.
+
+- A value you supply always wins. Supplying a new `postgres.auth.password` later doesn't change the password inside an initialized database; see [Recovering a PostgreSQL password mismatch](#recovering-a-postgresql-password-mismatch).
+- Nothing is generated with `secrets.existingSecret` or `externalSecrets.enabled`, or for an external database.
+- `secrets.generate: false` turns generation off, so a missing value fails the render. `values-production.yaml` and `values-staging.yaml` set this.
+- Moving from `secrets.existingSecret` back to the chart's Secret generates new values, because the chart's Secret doesn't exist yet. Copy the values across first.
+
+> **Argo CD and plain `helm template`: set the values or use `secrets.existingSecret`.** `lookup` needs a live cluster. These tools render without one, so every render generates new values. Each sync would then rotate the JWT secret, ending every session and, unless `secrets.ssoEncryptionKey` is set, breaking stored SSO secrets and upstream credentials. It would also change the Postgres password in the Secret, which stops matching the existing database, so the backend can't connect. These tools don't show `NOTES.txt` either, so nothing warns you at deploy time.
+>
+> Don't rely on `ignoreDifferences` to keep generated values: the chart renders this Secret under `stringData`, which the API server applies over `data`, so ignoring `/data/...` fields isn't a safe way to protect them. The dev element in this repo's `argocd/applicationset.yaml` uses `values-dev.yaml`, which reads a Secret you create first.
+>
+> Flux's helm-controller installs through the Helm SDK against the live cluster, so `lookup` should work there and generated values should stay stable. That comes from reading its code; it hasn't been tested on Flux.
+
+**Backend credentials go in `backend.environmentSecrets`, never in `backend.env`.** `backend.env` is copied into the backend Deployment as plain `value:` entries. Anyone who can `get` the Deployment or its pods, or read the Helm release Secret, can read it. The render fails when `backend.env` sets a non-empty credential: `ADMIN_PASSWORD`, `INITIAL_ADMIN_PASSWORD`, `JWT_SECRET`, `S3_SECRET_ACCESS_KEY` (or `S3_SECRET_KEY`), a `DATABASE_URL` with a password, `DEPENDENCY_TRACK_API_KEY`, `OPENSEARCH_PASSWORD`, `OIDC_CLIENT_SECRET`, `LDAP_BIND_PASSWORD`, `SMTP_PASSWORD`, `PEER_API_KEY`, `EDGE_API_KEY`, `GITHUB_TOKEN`, an Azure, GCS or CloudFront key, or an encryption key. Put a Secret reference in `backend.environmentSecrets` instead. An entry there wins over the same key in `backend.env`.
+
+```bash
+kubectl create secret generic ak-admin-credentials \
+  --from-literal=ADMIN_PASSWORD="$(openssl rand -base64 24)"
+```
+
+```yaml
+backend:
+  environmentSecrets:
+    - name: ADMIN_PASSWORD
+      secretKeyRef:
+        name: ak-admin-credentials
+        key: ADMIN_PASSWORD
+```
+
+`backend.allowCredentialsInEnv: true` turns the failure into a `NOTES.txt` warning. It is meant for throwaway test installs; the smoke, CI and mesh-test profiles set it.
 
 ### Security Contexts
 
@@ -714,6 +1068,28 @@ If your Prometheus only selects ServiceMonitors carrying a label (kube-prometheu
 
 The [monitoring/](../../monitoring/) directory contains a pre-built Grafana dashboard (12 panels across 4 rows) and 7 PrometheusRule alert definitions covering error rates, latency, pod health, storage usage, and database connectivity.
 
+### OpenTelemetry
+
+The backend exports traces over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set in `backend.env` (an empty value counts as unset). From backend 1.12.0 it can also export its log records and metrics to the same collector, over the same protocol. **Both are off by default**: turn them on only when the endpoint is a collector that accepts them, such as the OpenTelemetry Collector or Grafana Alloy. A traces-only backend used directly (Grafana Tempo, Jaeger) rejects log and metric exports, so a traces-only setup keeps working after an upgrade as long as these stay unset.
+
+```yaml
+backend:
+  env:
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.observability:4317"
+    OTEL_LOGS_EXPORTER: "otlp"      # 1.12.0, default "none"
+    OTEL_METRICS_EXPORTER: "otlp"   # 1.12.0, default "none"
+```
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `OTEL_TRACES_EXPORTER` | `otlp` | `none` stops span export. |
+| `OTEL_LOGS_EXPORTER` | `none` | `otlp` also exports log records with their `trace_id` and `span_id`. Stdout logging is unchanged, so enable it only where the collector is the log pipeline. |
+| `OTEL_METRICS_EXPORTER` | `none` | `otlp` also pushes the `/metrics` instruments every `OTEL_METRIC_EXPORT_INTERVAL` ms (default `60000`). `/metrics` and the ServiceMonitor are unchanged. |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | derived | Full URL for logs. Default: the shared endpoint with `grpc`; with `http/protobuf`, the traces URL with `/v1/traces` replaced by `/v1/logs`. |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | derived | Full URL for metrics, derived the same way with `/v1/metrics`. |
+
+With `OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"`, set `OTEL_EXPORTER_OTLP_ENDPOINT` to the full traces URL (ending in `/v1/traces`). Every signal carries `service.instance.id`, which defaults to the pod name (`HOSTNAME`), so replicas stay apart. A collector auth header (`OTEL_EXPORTER_OTLP_HEADERS`) is a credential: set it through `backend.environmentSecrets`, not `backend.env`.
+
 ## High Availability
 
 For production deployments:
@@ -725,7 +1101,127 @@ For production deployments:
 - Set `opensearch.replicaCount: 3` to switch OpenSearch from single-node Deployment mode to a StatefulSet with cluster bootstrapping. The chart sets `cluster.initial_cluster_manager_nodes` automatically.
 - DependencyTrack runs as a single replica due to PVC lock constraints. Plan maintenance windows for upgrades.
 
+These settings scale one Artifact Keeper instance. They do not replicate artifacts to a second site; for that, see the next section.
+
+## replicaCount vs peer replication
+
+`backend.replicaCount` and peer (mesh) replication solve different problems and are configured in different places.
+
+| | `backend.replicaCount > 1` | Peer replication (mesh) |
+|---|---|---|
+| What it is | More backend pods for **one** Artifact Keeper instance | Several **independent** Artifact Keeper instances that copy artifacts to each other |
+| Helm shape | One release | One release per peer |
+| Database | One shared PostgreSQL | One PostgreSQL per peer |
+| Artifact storage | One shared store | One store per peer |
+| Peer identity | One identity, shared by every pod | One identity per peer |
+| How it is set up | `replicaCount` (or `backend.autoscaling`) | Backend API calls after install: register peers, then subscribe repositories or create sync policies |
+| What it gives you | Availability and throughput for one instance | Copies of artifacts at other sites, each peer able to serve on its own |
+
+### HA replicas (one instance)
+
+`backend.replicaCount` only sets `spec.replicas` on the backend Deployment (via the `artifact-keeper.backend.replicaCount` helper; in fleet mode the preset decides and hibernation forces 0). Every pod gets the same `DATABASE_URL`, the same `JWT_SECRET`, the same `backend.env`, and the same `<release>-storage` volume. The chart does not render a per-pod database, volume, or peer identity, and adds no headless Service for discovery.
+
+The backend keeps its peer identity in the database (the `peer_instance_identity` table), so all pods of one release are the same peer as far as any other instance is concerned. The background sync worker is safe to run in several pods: tasks are claimed in the database, so two replicas do not deliver the same task twice.
+
+To run more than one backend pod, the pods must actually be able to share state:
+
+- **PostgreSQL**: a single database that every pod reaches. For production, set `postgres.enabled: false` and point `externalDatabase` (or `externalDatabase.existingSecret`) at a managed database.
+- **Artifact storage**: either object storage (`backend.env.STORAGE_BACKEND: s3` with `S3_BUCKET` and friends, plus `backend.persistence.enabled: false`), or a ReadWriteMany volume (`backend.persistence.accessModes: [ReadWriteMany]` on an RWX-capable `storageClass`). With object storage, each pod can use an `emptyDir` or its own generic ephemeral PVC for upload scratch space. The default persistent volume is ReadWriteOnce, which either pins every pod to one node or leaves extra pods stuck on a Multi-Attach error. See [Storage](#storage) for the scan-workspace and shared-config volumes, which have the same constraint. The chart does not block `replicaCount > 1` with an RWO volume, so check this yourself.
+- **Peer API key**: if this instance also takes part in a mesh, set `PEER_API_KEY` explicitly (preferably through `backend.environmentSecrets`). When it is unset the backend generates a random key at startup and logs a warning, so each pod would come up with a different one.
+
+### Mesh peers (several instances)
+
+A peer is a complete Artifact Keeper deployment: backend, PostgreSQL, and artifact storage of its own. On Kubernetes that means one Helm release per peer, usually in its own namespace or cluster. Each peer can run its own HA replicas as described above.
+
+The chart does not bootstrap a mesh. Peers are linked after install through the backend API (`/api/v1/peers`, `/api/v1/peers/{id}/repositories`, `/api/v1/sync-policies`), using credentials minted on each peer. The chart's part is limited to:
+
+- the peer identity env vars, `backend.env.PEER_INSTANCE_NAME`, `backend.env.PEER_PUBLIC_ENDPOINT`, and `PEER_API_KEY`;
+- an endpoint that the other peers can reach (an Ingress, HTTPRoute, or Route, or a Service when all peers share a cluster);
+- `backend.env.AK_SSRF_ALLOW_PRIVATE_CIDRS` when peers reach each other on private addresses, because peer registration rejects private and internal endpoints by default.
+
+The [mesh bootstrap guide](../../docs/mesh-bootstrap.md) walks through a two-peer setup end to end. For the replication model itself (push, pull, and mirror modes, sync policies, chunked transfer), see the backend's [Peer Replication docs](https://artifactkeeper.com/docs/advanced/edge-nodes/) and the peer handlers in the [backend repository](https://github.com/artifact-keeper/artifact-keeper/tree/main/backend/src/api/handlers).
+
 ## Upgrading
+
+### Upgrading to 1.11.1
+
+**`RATE_LIMIT_TRUSTED_PROXY_CIDRS` is no longer set by default.** Chart 1.9.28 and earlier put `RATE_LIMIT_TRUSTED_PROXY_CIDRS: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"` in `backend.env`. Those ranges cover every pod in a typical cluster, so any pod could send a forged `X-Forwarded-For` and be treated as another client. Backend 1.11.1 already stops using such addresses for authorization ([artifact-keeper#4681](https://github.com/artifact-keeper/artifact-keeper/pull/4681)), but the default still trusted too much for rate limiting and `traceparent`. The trusted list now comes from `backend.clientIp.trustedProxyCidrs`, which is empty by default. An explicit `RATE_LIMIT_TRUSTED_PROXY_CIDRS` in `backend.env` still wins. `helm upgrade --reuse-values` keeps the previous chart's default values, including the old RFC1918 list, so drop that flag or pass `--set backend.env.RATE_LIMIT_TRUSTED_PROXY_CIDRS=null` to pick up the new default. The install notes show the list in effect.
+
+- With the list empty, the backend keys rate limits on the TCP peer. Behind an ingress controller or Gateway, all clients that come through one proxy pod share one API rate-limit bucket. Login limiting is not weakened: logins are limited per user and IP, with a per-user lockout and a global backstop, so an empty list does not let one client lock out other users. The old `values.yaml` comment that said otherwise is out of date.
+- To keep per-client keying, set `backend.clientIp.trustedProxyCidrs` to the CIDR that only your proxy pods use. Kubernetes has no per-Deployment pod CIDR, so get one from your CNI: for example, a Calico IP pool or Cilium pool assigned to the ingress namespace, or the `podCIDR` of nodes dedicated to the proxy. A `hostNetwork` controller connects from node IPs, so list those. Do not reuse a range that other workloads draw from.
+- `backend.clientIp.xffTrustedForAuthz` renders `XFF_TRUSTED_FOR_AUTHZ` (default `false`). While it is false, requests that arrive through a trusted proxy have an unknown client IP for `allowed_cidrs` permission conditions, so IP-conditioned grants are denied for them, and audit rows record no IP. Set it to `true` only when every proxy in the trusted list appends the address it received the request from to `X-Forwarded-For`, all the way to the edge. The install notes print a reminder when trusted proxies are set and it is false.
+
+**New backend environment values (backend 1.11.1).**
+
+| Value | Default | Purpose |
+|-------|---------|---------|
+| `backend.clientIp.trustedProxyCidrs` (`RATE_LIMIT_TRUSTED_PROXY_CIDRS`) | `""` | Proxies whose `X-Forwarded-For` and `traceparent` the backend believes. |
+| `backend.clientIp.xffTrustedForAuthz` (`XFF_TRUSTED_FOR_AUTHZ`) | `false` | Whether the `X-Forwarded-For` client IP may be used for `allowed_cidrs` and audit attribution. |
+| `HTTP_HEADER_READ_TIMEOUT_SECS` in `backend.env` | `10` | Seconds an HTTP/1 client has to send the request line and headers. The same timer closes idle keep-alive connections. `0` turns it off. |
+| `GLOBAL_REQUEST_TIMEOUT_SECS` in `backend.env` | `120` | Wall-clock limit for a non-transfer request once its head has arrived. Listed now; not new. |
+
+Because the backend now closes idle keep-alive connections after `HTTP_HEADER_READ_TIMEOUT_SECS`, a proxy that pools upstream connections should time them out sooner, or it can reuse a connection the backend has just closed and return a `502`. ingress-nginx keeps idle upstream connections for 60 seconds by default (`upstream-keepalive-timeout` in the controller ConfigMap). Lower that below 10, or raise `HTTP_HEADER_READ_TIMEOUT_SECS` above it. On Envoy Gateway, set the upstream idle timeout in a `BackendTrafficPolicy`.
+
+### Upgrading to 1.11.1: credentials and OpenSearch access
+
+- **The render fails if `backend.env` holds a credential** ([#375](https://github.com/artifact-keeper/artifact-keeper-iac/issues/375)). The error names the keys. Move each one to `backend.environmentSecrets` (see Secrets Management) **and rotate it**: the old value is still readable from earlier ReplicaSets and Helm release revisions. For an `ADMIN_PASSWORD` that has already been used to create the admin account, change the password in the application too, because the backend applies `ADMIN_PASSWORD` only on first start. For a test install only, `backend.allowCredentialsInEnv: true` keeps the old behaviour and adds a warning.
+- **OpenSearch gets a NetworkPolicy even with `networkPolicy.enabled: false`** ([#376](https://github.com/artifact-keeper/artifact-keeper-iac/issues/376)). Only the backend reaches port 9200. If something else reads the index, such as OpenSearch Dashboards or a backup job, add it to `opensearch.networkPolicy.extraFrom`, or set `opensearch.networkPolicy.enabled: false`.
+- **Prometheus scrapes of the metrics listener are admitted** ([#307](https://github.com/artifact-keeper/artifact-keeper-iac/issues/307)). If Prometheus runs outside the `monitoring` namespace, set `networkPolicy.monitoringNamespace` (or `networkPolicy.monitoringPeers`).
+
+### Upgrading to 1.11.0
+
+These notes apply when `backend.image.tag` (or `appVersion`) moves to backend 1.11.0.
+
+**Stop every backend replica before migration 233 runs.** Migration 233 scopes lifecycle policies by explicit repository assignments, and an older backend reads the new scopes as "every repository": a 1.10.x replica or lifecycle scheduler still running next to a 1.11.0 one can delete artifacts across the whole instance. Do not do a rolling or mixed-version upgrade, and do not downgrade to 1.10.x afterwards without reconciling policy scopes by hand.
+
+- The default `backend.strategy.type: Recreate` stops all old pods before starting new ones, which is what this migration needs. If you set `RollingUpdate`, or run with `backend.autoscaling.enabled`, scale the backend to zero first (`kubectl scale deploy/<release>-backend --replicas=0`, with the HPA removed or paused), then run `helm upgrade`.
+- In fleet or mesh setups, each instance has its own database, so the rule applies per instance: all replicas of one instance must stop together.
+- API change: creating a lifecycle policy without `repository_id` now creates a dormant policy. Clients that relied on the old global default must send `applies_to_all: true`.
+
+**New backend environment values.** All of them are optional and default to the backend's own default when unset. They go in `backend.env`, where `values.yaml` lists each one, commented out, with its default:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `S3_PUBLIC_ENDPOINT` | unset (`S3_ENDPOINT`) | Origin (`scheme://host[:port]`, no path) that presigned S3 URLs and the OCI blob `307` point at. |
+| `AZURE_STORAGE_PUBLIC_ENDPOINT` | unset (`AZURE_STORAGE_ENDPOINT`) | Base URL for Azure SAS redirects. A path is allowed. |
+| `DOWNLOAD_VERIFY_CHECKSUMS` | `true` | Verifies SHA-256 while streaming generic downloads. |
+| `STORAGE_SCRUB_INTERVAL_SECS`, `STORAGE_SCRUB_MAX_OBJECTS`, `STORAGE_SCRUB_MAX_BYTES` | `0`, `500`, `2147483648` | Scheduled storage scrub (report-only). `0` turns the schedule off. |
+| `GRPC_BIND_IP` | `0.0.0.0` | gRPC listen IP. Keep `0.0.0.0` while the backend Service exposes the grpc port. |
+| `METRICS_BIND_IP` | `0.0.0.0` | Metrics-only listener IP. Also available as `backend.metricsListener.bindIP`. |
+| `RPM_VERSION_RETENTION_KEEP` | `0` | Keeps the N newest published versions of each curated RPM repository. `0` keeps all. |
+| `GC_TRASH_RETENTION_DAYS` | `0` | Days a soft-deleted artifact stays restorable in the admin trash. |
+| `BLOB_GC_MIN_AGE_SECS` | `86400` | Minimum age before an unreferenced OCI blob can be reclaimed. Clamped to [60, 604800]. |
+| `LDAP_SYNC_INTERVAL` | `3600` | Directory reconcile period. When LDAP is configured, it runs by default. `0` turns it off. |
+| `LDAP_SYNC_DEACTIVATE` | `false` | Opt-in deactivation of users the directory no longer has. |
+| `LDAP_SYNC_MAX_DEACTIVATE_PERCENT`, `LDAP_SYNC_MAX_DEACTIVATE` | `10`, `25` | Per-provider caps on deactivations in one pass. |
+| `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG` | `parentbased_always_on`, `1.0` | Trace sampler, using OpenTelemetry spec names. |
+| `NPM_VIRTUAL_NEGATIVE_CACHE_TTL_MS`, `NPM_VIRTUAL_NEGATIVE_CACHE_MAX_ENTRIES` | `5000`, `4096` | npm virtual-member miss cache. |
+| `AK_VSCODE_GALLERY_METADATA_BUDGET_BYTES` | 3/8 of 1 GiB | VS Code gallery share of the proxy metadata budget. |
+| `MIGRATION_SOURCE_CONNECT_TIMEOUT_SECS`, `MIGRATION_SOURCE_READ_TIMEOUT_SECS`, `MIGRATION_SOURCE_BUFFERED_TIMEOUT_SECS` | `10`, `30`, `300` | Artifactory/Nexus migration source timeouts. |
+| `OSV_RECORD_FETCH_BUDGET_SECS` | `5` | Budget for hydrating one OSV batch's advisory records. |
+| `CONDA_ATTESTATION_REQUIRE_VERIFIED` | `true` | Refuses conda attestations that fail verification. |
+| `AK_CONDA_PYPI_ALIAS_MAP` | unset | Path to a conda-to-PyPI alias map document. |
+| `SIGNING_KEY_ROTATION_OVERLAP_SECS` | `1209600` | Window in which old and new signing keys both sign metadata after a rotation. |
+| `SIGNING_AUTO_MIGRATE_LEGACY_KEYS` | `false` | Opt-in replacement, at startup, of keys that cannot sign their bound metadata. |
+| `PACMAN_FILE_LIST_MAX_DECOMPRESSED_BYTES`, `MAX_LOCKFILE_BYTES` | 4 GiB, 32 MiB | Ingest size caps. |
+| `AK_BUNDLE_MAX_MANIFEST_BYTES`, `AK_BUNDLE_MAX_ITEMS`, `AK_BUNDLE_MAX_ENTRIES`, `AK_BUNDLE_MAX_TOTAL_BYTES` | 256 MiB, 2000000, 4000000, 4 TiB | Bundle reader limits. The bundles API is a preview in 1.11.0. |
+
+`values.yaml` also now lists these older variables, which the chart never listed before: `MAX_INGEST_DECOMPRESSED_BYTES` (128 MiB), `OTEL_EXPORTER_OTLP_PROTOCOL` (`grpc`), `AK_GUEST_ACCESS_ENABLED`, `AK_SSRF_ALLOW_PRIVATE_CIDRS`, `UPSTREAM_ALLOW_PRIVATE_IPS`, `WEBHOOK_ALLOW_PRIVATE_IPS` and `SSO_ALLOW_PRIVATE_IPS`.
+
+**Behaviour changes that affect existing values:**
+
+- `WEBHOOK_ALLOW_PRIVATE_IPS` and `SSO_ALLOW_PRIVATE_IPS` are now **additive** with `AK_SSRF_ALLOW_PRIVATE_CIDRS`: a webhook target or IdP is allowed when either the toggle is `true` or the address is in the CIDR list. For upstream URLs, the CIDR list still wins over `UPSTREAM_ALLOW_PRIVATE_IPS`. Metadata, loopback and link-local addresses stay blocked.
+- `RATE_LIMIT_TRUSTED_PROXY_CIDRS` now also decides which peers may set an inbound W3C `traceparent`. From chart 1.11.1 it is empty by default and set through `backend.clientIp.trustedProxyCidrs` (see Upgrading to 1.11.1); with it empty, every client may set the trace parent.
+- When `AK_GUEST_ACCESS_ENABLED` is set explicitly, it pins guest access and overrides the new runtime toggle. Leave it unset to manage guest access from the web UI or the API.
+- `ak_http_request_duration_seconds` is now a bucketed histogram, so its `quantile` series are gone. The dashboard and alert rules in `monitoring/` already use `histogram_quantile()` over `_bucket`. Update any of your own panels that select `{quantile=...}`.
+
+**Presigned downloads behind an in-cluster object store** ([#370](https://github.com/artifact-keeper/artifact-keeper-iac/issues/370)). With `PRESIGNED_DOWNLOADS_ENABLED` and `S3_REDIRECT_DOWNLOADS` on, OCI blob pulls now answer `307` to the object store. If `S3_ENDPOINT` is an in-cluster address (for example `http://minio:9000`), set `S3_PUBLIC_ENDPOINT` to the host clients use, or every redirected pull fails. The install notes warn when this combination is detected. For the public S3 host:
+
+- Do not use `nginx.ingress.kubernetes.io/rewrite-target` or a path prefix.
+- Forward the original `Host` header (the ingress-nginx default). SigV4 signs the host and the path, so rewriting either one produces `403`s.
+- Azure is the opposite: Azure Storage reads the account from `Host`, so a proxy in front of `*.blob.core.windows.net` must rewrite `Host` to the account host, or use the account's custom domain.
+
+**Settings that are not environment variables.** Scan-on-proxy, which 1.11.0 now enforces for Maven, Gradle, sbt, NuGet, Chocolatey, PowerShell and Cargo Remotes that already had it enabled, and `oci_trusted_bearer_realms` are per-repository settings set through the API. The chart cannot set them. A credentialed Docker Hub Remote must add `"oci_trusted_bearer_realms": ["https://auth.docker.io"]`, or its pulls fall back to anonymous tokens. See the backend's `docs/oci-trusted-bearer-realms.md` and `docs/security/scan-on-proxy.md`.
 
 ### Image Tags
 
@@ -736,6 +1232,54 @@ Docker tags use semver without a `v` prefix: git tag `v1.1.0` produces Docker ta
 ### Container Registry
 
 Images are published to `ghcr.io/artifact-keeper/artifact-keeper-{backend,web}` by default. Docker Hub mirrors are available at `docker.io/artifactkeeper/{backend,web}`. Change the registry via `global.imageRegistry` or per-component `image.repository` values.
+
+## Managed Dependency-Track API-key Secret
+
+To have the bootstrap Job provision the backend's API key without a shared
+ReadWriteOnce volume, opt in with:
+
+```yaml
+dependencyTrack:
+  existingApiKeySecret: ak-dtrack-api-key
+  existingApiKeySecretKey: API_KEY
+  bootstrap:
+    enabled: true
+    manageApiKeySecret: true
+```
+
+The Job uses the existing bootstrap image and generates a key only when the
+named Secret is absent. An existing nonempty `API_KEY` is preserved; an empty
+or incorrectly populated Secret fails explicitly. A concurrent creator wins
+without its value being overwritten. The Job installs no packages and does not
+need jq or kubectl. Bootstrap must retain access to the Dependency-Track API;
+with NetworkPolicy enabled, the chart's Dependency-Track policy already allows
+the scoped TCP 8080 egress the Job needs (added in chart 1.9.45).
+Kubernetes API HTTPS access must also be allowed by the cluster's policies.
+
+The backend consumes `DEPENDENCY_TRACK_API_KEY` from this Secret. The bootstrap
+Job and backend do not mount `shared-config`, and its PVC is not rendered. This
+removes only that PVC constraint; multi-replica backends must also address the
+artifact-storage and scan-workspace volumes described above.
+
+Only the bootstrap Job uses the dedicated ServiceAccount. Its namespace Role
+allows `get` on the designated Secret and `create` on Secrets. Kubernetes RBAC
+cannot restrict top-level creation by resource name. No list, update, patch or
+delete permissions are granted. The generated Secret has no Job owner reference
+or Argo CD tracking label, and is retained on hook cleanup and uninstall. Back
+it up along with Dependency-Track's database. API-key rotation is operator-managed;
+restart backend pods after replacing an environment-injected key.
+
+For Argo CD, RBAC resources are in sync wave `-1` and the Job is a `Sync` hook
+in wave `0`, alongside its ConfigMap and the workloads. It can create the Secret
+while the backend is waiting for it, avoiding a `PostSync` health dependency
+cycle. For Helm, it is a normal Job with a revision-suffixed name, so `--wait`
+does not wait for the backend before creating the Job and upgrades do not patch
+an immutable Job template. The default PVC mode keeps its existing Helm hooks.
+
+Keep the Dependency-Track admin password stable across GitOps renders, as
+described under "Recovering a Dependency-Track password mismatch". Do not
+switch an existing PVC installation to this mode until its API-key handoff and
+backend rollout are planned; deleting the old shared PVC is an operator action.
 
 ## Troubleshooting
 
@@ -760,6 +1304,27 @@ When `replicaCount >= 2`, the chart renders a StatefulSet with `cluster.initial_
 
 DependencyTrack loads its vulnerability database on first boot, which requires 4Gi+ of memory and can take several minutes. The readiness probe is configured with a generous initial delay. If the pod is killed before initialization completes, increase `dependencyTrack.resources.limits.memory`.
 
+### Recovering a PostgreSQL password mismatch
+
+Postgres applies its password only when it first initializes its data directory. When `postgres.auth.password` is unset, the chart generates a password on first install and keeps it stable by reading it back from the Secret on later renders. These situations break the pairing between the Secret and the password the database actually has:
+
+1. The Secret is deleted while the Postgres PVC survives (StatefulSet PVCs are never removed by Helm), so the next install generates a fresh password while the database still has the old one. `helm uninstall` no longer deletes a Secret holding a generated value, but a release that was uninstalled while on chart 1.9.53 did lose it.
+2. A new `postgres.auth.password` on an existing release, or the Secret edited or replaced out of band.
+3. Rendering with Argo CD or plain `helm template` (see [Generated credentials](#generated-credentials)).
+
+The backend's `wait-for-postgres` init container only checks that Postgres is up, so the backend then starts, logs `password authentication failed` and restarts in a loop, and `helm install --wait` times out. To recover, pick one (`<fullname>` is usually `<release>-artifact-keeper`):
+
+- **Restore the old password**: if you still have it (a Secret backup, a values file), set it as `postgres.auth.password` and run the upgrade again.
+- **Change the database to match the Secret**: the local socket in the Postgres image doesn't ask for a password, so you can apply the Secret's value directly:
+
+  ```bash
+  kubectl exec <fullname>-postgres-0 -n <namespace> -- sh -c \
+    'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "ALTER USER \"$POSTGRES_USER\" PASSWORD '"'"'$POSTGRES_PASSWORD'"'"'"'
+  kubectl rollout restart deployment/<fullname>-backend -n <namespace>
+  ```
+
+- **Start over**: delete the claim (`kubectl delete pvc postgres-data-<fullname>-postgres-0`) and the Postgres pod, which initializes an empty database with the Secret's password. This loses all data in the database.
+
 ### Recovering a Dependency-Track password mismatch
 
 The bootstrap Job logs in with `DEPENDENCY_TRACK_ADMIN_PASSWORD` from the chart Secret. When `dependencyTrack.adminPassword` is unset, the chart generates that password on first install and keeps it stable by reading it back from the Secret on later renders. Two situations break the pairing between the Secret and the password Dependency-Track actually has:
@@ -773,7 +1338,19 @@ The bootstrap Job then fails with `forceChangePassword failed` (it assumes the c
 - **Reset Dependency-Track**: delete the Dependency-Track PVC (`kubectl delete pvc <release>-dtrack-data`) and its pod. Dependency-Track reinitializes from scratch with the default password and the next bootstrap run completes the pairing again. This loses Dependency-Track's local state (projects, findings history); SBOMs are re-ingested by the backend on the next scan cycle.
 - **Reconcile by hand**: log into the Dependency-Track UI with the password it actually has, change it to the Secret's current value, and re-run the Job (`kubectl delete job <release>-dtrack-init`, then sync/upgrade).
 
-GitOps note: engines that render with `helm template` (ArgoCD, Flux) never see the stored Secret value, so they would regenerate the password on every sync. The ApplicationSet shipped in this repo pins the live value with `ignoreDifferences` on `DEPENDENCY_TRACK_ADMIN_PASSWORD` plus the `RespectIgnoreDifferences=true` sync option. Replicate that if you deploy this chart with your own GitOps tooling and leave `adminPassword` unset.
+GitOps note: engines that render with `helm template` (Argo CD) never see the stored Secret value, so they would regenerate the password on every sync. Set `adminPassword` or use `secrets.existingSecret` with those engines.
+
+### Concurrent Dependency-Track API-key Secret creation
+
+In managed-Secret mode, an HTTP 409 from Secret creation means another bootstrap
+Job created the Secret first. The losing Job preserves the winner's key and
+waits up to 120 seconds for the kubelet to project it into its optional Secret
+volume. Projection latency depends on the kubelet sync period and Secret cache
+TTL; this concurrent-creation path has not been validated on a real cluster.
+If the Job times out, verify that the named Secret contains a nonempty `API_KEY`
+and that Secret projection is working, then retry bootstrap after the volume
+has refreshed. Preserve the existing key; do not delete a Secret used by the
+backend just to retry bootstrap.
 
 ### Backend PVC Permissions
 

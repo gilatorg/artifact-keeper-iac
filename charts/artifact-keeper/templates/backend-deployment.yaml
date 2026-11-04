@@ -8,6 +8,7 @@ security policies, and operational needs before use in production.
 =============================================================================
 */}}
 {{- if .Values.backend.enabled }}
+{{- include "artifact-keeper.validateBackendEnvCredentials" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,6 +16,10 @@ metadata:
   labels:
     {{- include "artifact-keeper.labels" . | nindent 4 }}
     app.kubernetes.io/component: backend
+  {{- with .Values.backend.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   {{- if not .Values.backend.autoscaling.enabled }}
   replicas: {{ include "artifact-keeper.backend.replicaCount" . }}
@@ -31,6 +36,10 @@ spec:
         {{- range $key, $value := .Values.backend.podLabels }}
         {{ $key }}: {{ $value | quote }}
         {{- end }}
+      {{- with .Values.backend.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       {{- with (.Values.backend.tolerations | default .Values.global.tolerations) }}
       tolerations:
@@ -62,6 +71,12 @@ spec:
             "--certificate-oidc-issuer={{ .Values.cosign.certificateOidcIssuer }}",
             "--certificate-identity-regexp={{ .Values.cosign.certificateIdentityRegexp }}",
             {{ include "artifact-keeper.image" (dict "image" .Values.backend.image "defaultTag" .Chart.AppVersion "context" .) | quote }}]
+          {{- /* cosign reaches Rekor/Fulcio and the registry, so behind a
+                 proxy-only egress it needs the backend's proxy settings. */}}
+          {{- with (include "artifact-keeper.proxyEnv" (dict "proxy" .Values.backend.proxy "ctx" $)) }}
+          env:
+            {{- . | trim | nindent 12 }}
+          {{- end }}
           {{- with .Values.backend.initContainerSecurityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
@@ -180,6 +195,9 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           env:
+            {{- with (include "artifact-keeper.proxyEnv" (dict "proxy" .Values.backend.proxy "ctx" $)) }}
+            {{- . | trim | nindent 12 }}
+            {{- end }}
             {{- if eq (include "artifact-keeper.dtrackApiKeyFile" .) "true" }}
             # The backend reads the Dependency-Track API key from this file
             # (see resolve_api_key in dependency_track_service.rs). This replaces
@@ -198,9 +216,22 @@ spec:
                   name: {{ .Values.dependencyTrack.existingApiKeySecret }}
                   key: {{ .Values.dependencyTrack.existingApiKeySecretKey }}
             {{- end }}
+            {{- /* A name defined in backend.environmentSecrets wins over the
+                   same key in backend.env, so moving a credential there does
+                   not need the backend.env entry removed (#375). */}}
+            {{- $secretEnv := list }}
+            {{- range .Values.backend.environmentSecrets }}
+            {{- $secretEnv = append $secretEnv .name }}
+            {{- end }}
+            {{- /* Likewise the proxy helper above owns HTTP_PROXY/HTTPS_PROXY/
+                   NO_PROXY (and lowercase) whenever it emits them, so a copy
+                   left in backend.env does not define the variable twice. */}}
+            {{- $proxyEnv := splitList " " (include "artifact-keeper.proxyEnvNames" (dict "proxy" .Values.backend.proxy "ctx" $)) }}
             {{- range $key, $value := .Values.backend.env }}
+            {{- if not (or (has $key $secretEnv) (has $key $proxyEnv)) }}
             - name: {{ $key }}
               value: {{ $value | quote }}
+            {{- end }}
             {{- end }}
             - name: DATABASE_URL
               {{- if and (not .Values.postgres.enabled) .Values.externalDatabase.existingSecret }}
@@ -315,7 +346,7 @@ spec:
             - name: ALLOW_HTTP_INTEGRATIONS
               value: "1"
             {{- end }}
-            {{- if .Values.secrets.smtpPassword }}
+            {{- if eq (include "artifact-keeper.smtpPasswordManaged" .) "true" }}
             - name: SMTP_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -323,9 +354,48 @@ spec:
                   key: SMTP_PASSWORD
             {{- end }}
             {{- if .Values.backend.metricsListener.enabled }}
+            {{- /*
+            METRICS_PORT is rendered once. A backend.env entry with the same
+            key used to render a second copy, which Kubernetes accepts on
+            create but a later strategic-merge patch then drops both (#381).
+            An explicit backend.env entry wins, as with METRICS_BIND_IP below,
+            but it must agree with metricsListener.port: the metrics Service,
+            NetworkPolicy and ServiceMonitor all use that value.
+            */}}
+            {{- if hasKey .Values.backend.env "METRICS_PORT" }}
+            {{- if ne (toString (index .Values.backend.env "METRICS_PORT")) (toString .Values.backend.metricsListener.port) }}
+            {{- fail (printf "backend.env.METRICS_PORT (%v) conflicts with backend.metricsListener.port (%v): remove the backend.env entry or set both to the same port" (index .Values.backend.env "METRICS_PORT") .Values.backend.metricsListener.port) }}
+            {{- end }}
+            {{- else }}
             - name: METRICS_PORT
               value: {{ .Values.backend.metricsListener.port | quote }}
             {{- end }}
+            {{- /*
+            METRICS_BIND_IP (backend 1.11.0+). An explicit entry in backend.env
+            wins, as with the image-builder variables above.
+            */}}
+            {{- if and .Values.backend.metricsListener.bindIP (not (hasKey .Values.backend.env "METRICS_BIND_IP")) }}
+            - name: METRICS_BIND_IP
+              value: {{ .Values.backend.metricsListener.bindIP | quote }}
+            {{- end }}
+            {{- end }}
+            {{- /*
+            Client-IP resolution behind a proxy (backend.clientIp). Explicit
+            backend.env entries win, as with METRICS_BIND_IP above.
+            */}}
+            {{- $clientIp := .Values.backend.clientIp | default dict }}
+            {{- if and $clientIp.trustedProxyCidrs (not (hasKey .Values.backend.env "RATE_LIMIT_TRUSTED_PROXY_CIDRS")) }}
+            - name: RATE_LIMIT_TRUSTED_PROXY_CIDRS
+              value: {{ $clientIp.trustedProxyCidrs | quote }}
+            {{- end }}
+            {{- if not (hasKey .Values.backend.env "XFF_TRUSTED_FOR_AUTHZ") }}
+            {{- if not (kindIs "bool" (dig "xffTrustedForAuthz" false $clientIp)) }}
+            {{- fail "backend.clientIp.xffTrustedForAuthz must be a boolean" }}
+            {{- end }}
+            - name: XFF_TRUSTED_FOR_AUTHZ
+              value: {{ dig "xffTrustedForAuthz" false $clientIp | quote }}
+            {{- end }}
+            {{- with include "artifact-keeper.backendTuningEnv" . }}{{ . | trim | nindent 12 }}{{- end }}
             {{- if eq (include "artifact-keeper.fleet.enabled" .) "true" }}
             # Object storage for this instance. Artifacts share one bucket with
             # a per-instance key prefix; the non-secret settings (STORAGE_BACKEND,
@@ -423,23 +493,41 @@ spec:
               mountPath: /shared
               readOnly: true
             {{- end }}
+            {{- with .Values.backend.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir:
             sizeLimit: 256Mi
         - name: storage
           {{- if .Values.backend.persistence.enabled }}
+          {{- if .Values.backend.persistence.ephemeral.enabled }}
+          {{- fail "backend.persistence.enabled and backend.persistence.ephemeral.enabled cannot both be true" }}
+          {{- end }}
           persistentVolumeClaim:
-            claimName: {{ include "artifact-keeper.fullname" . }}-storage
+            claimName: {{ .Values.backend.persistence.existingClaim | default (printf "%s-storage" (include "artifact-keeper.fullname" .)) }}
+          {{- else if .Values.backend.persistence.ephemeral.enabled }}
+          ephemeral:
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  {{- toYaml .Values.backend.persistence.ephemeral.accessModes | nindent 18 }}
+                resources:
+                  requests:
+                    storage: {{ .Values.backend.persistence.ephemeral.size }}
+                {{- with .Values.backend.persistence.ephemeral.storageClass }}
+                storageClassName: {{ . | quote }}
+                {{- end }}
           {{- else }}
           emptyDir:
-            sizeLimit: 10Gi
+            sizeLimit: {{ .Values.backend.persistence.emptyDir.sizeLimit }}
           {{- end }}
         {{- if or .Values.backend.scanWorkspace.enabled .Values.trivy.enabled }}
         - name: scan-workspace
           {{- if .Values.backend.scanWorkspace.enabled }}
           persistentVolumeClaim:
-            claimName: {{ include "artifact-keeper.fullname" . }}-scan-workspace
+            claimName: {{ .Values.backend.scanWorkspace.existingClaim | default (printf "%s-scan-workspace" (include "artifact-keeper.fullname" .)) }}
           {{- else }}
           {{- /* Trivy is enabled, so SCAN_WORKSPACE_PATH=/scan-workspace is in
                  the env above, but no PVC was requested. The container root
@@ -455,6 +543,9 @@ spec:
         {{- if eq (include "artifact-keeper.dtrackApiKeyFile" .) "true" }}
         - name: shared-config
           persistentVolumeClaim:
-            claimName: {{ include "artifact-keeper.fullname" . }}-shared-config
+            claimName: {{ include "artifact-keeper.sharedConfigClaimName" . }}
+        {{- end }}
+        {{- with .Values.backend.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}
 {{- end }}

@@ -8,6 +8,7 @@ security policies, and operational needs before use in production.
 =============================================================================
 */}}
 {{- if .Values.dependencyTrack.enabled }}
+{{- $manageApiKeySecret := dig "bootstrap" "manageApiKeySecret" false .Values.dependencyTrack }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,6 +16,10 @@ metadata:
   labels:
     {{- include "artifact-keeper.labels" . | nindent 4 }}
     app.kubernetes.io/component: dependency-track
+  {{- with .Values.dependencyTrack.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   replicas: 1
   strategy:
@@ -26,6 +31,10 @@ spec:
     metadata:
       labels:
         {{- include "artifact-keeper.dtrack.selectorLabels" . | nindent 8 }}
+      {{- with .Values.dependencyTrack.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       {{- with (.Values.dependencyTrack.tolerations | default .Values.global.tolerations) }}
       tolerations:
@@ -87,6 +96,9 @@ spec:
               containerPort: 8080
               protocol: TCP
           env:
+            {{- with (include "artifact-keeper.proxyEnv" (dict "proxy" .Values.dependencyTrack.proxy "ctx" $)) }}
+            {{- . | trim | nindent 12 }}
+            {{- end }}
             {{- $dbHostFromSecret := eq (include "artifact-keeper.dtrackDbHostFromExistingSecret" .) "true" }}
             {{- if $dbHostFromSecret }}
             # Project host/port out of the operator-provided Secret so the JDBC
@@ -139,10 +151,13 @@ spec:
             - name: ALPINE_ENFORCE_AUTHENTICATION
               value: "true"
             # CORS is only relevant when the Dependency-Track UI/API is exposed
-            # publicly (ingress.dtrack.enabled, or httpRoute.dtrack.enabled when
-            # routing through a Gateway). In-cluster access (backend -> service,
+            # publicly (ingress.dtrack.enabled, httpRoute.dtrack.enabled when
+            # routing through a Gateway, or route.dtrack.enabled for the
+            # OpenShift Route). In-cluster access (backend -> service,
             # kubectl port-forward) is same-origin and needs no CORS, so it
-            # stays disabled otherwise.
+            # stays disabled otherwise. httpRoute excludes both Ingress and
+            # Route, so it wins outright; Ingress is checked before Route.
+            {{- $routeDtrack := and .Values.route.enabled (dig "dtrack" "enabled" false .Values.route) }}
             {{- if and .Values.httpRoute.enabled .Values.httpRoute.dtrack.enabled }}
             - name: ALPINE_CORS_ENABLED
               value: "true"
@@ -153,6 +168,19 @@ spec:
               value: "true"
             - name: ALPINE_CORS_ALLOW_ORIGIN
               value: {{ .Values.ingress.dtrack.corsAllowOrigin | quote }}
+            {{- else if and (not .Values.httpRoute.enabled) $routeDtrack }}
+            {{- /* Default origin: the shared route.host (fleet.host fallback,
+                   as in route.yaml), https when the Routes terminate TLS. */}}
+            {{- $routeOrigin := dig "dtrack" "corsAllowOrigin" "" .Values.route }}
+            {{- if not $routeOrigin }}
+            {{- $routeHost := .Values.route.host | default (dig "host" "" (.Values.fleet | default dict)) }}
+            {{- $routeHost = required "route.host must be set when route.enabled is true (the external hostname shared by every Route, e.g. artifacts.apps.<cluster-domain>)" $routeHost }}
+            {{- $routeOrigin = printf "%s://%s" (ternary "https" "http" (dig "tls" "enabled" false .Values.route)) $routeHost }}
+            {{- end }}
+            - name: ALPINE_CORS_ENABLED
+              value: "true"
+            - name: ALPINE_CORS_ALLOW_ORIGIN
+              value: {{ $routeOrigin | quote }}
             {{- else }}
             - name: ALPINE_CORS_ENABLED
               value: "false"
@@ -198,7 +226,8 @@ spec:
             sizeLimit: {{ .Values.dependencyTrack.tmpSizeLimit | default "2Gi" }}
         - name: dtrack-data
           persistentVolumeClaim:
-            claimName: {{ include "artifact-keeper.fullname" . }}-dtrack
+            claimName: {{ .Values.dependencyTrack.persistence.existingClaim | default (printf "%s-dtrack" (include "artifact-keeper.fullname" .)) }}
+{{- if not .Values.dependencyTrack.persistence.existingClaim }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -207,6 +236,10 @@ metadata:
   labels:
     {{- include "artifact-keeper.labels" . | nindent 4 }}
     app.kubernetes.io/component: dependency-track
+  {{- with .Values.dependencyTrack.persistence.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   accessModes:
     - ReadWriteOnce
@@ -216,6 +249,7 @@ spec:
   {{- if .Values.dependencyTrack.persistence.storageClass }}
   storageClassName: {{ .Values.dependencyTrack.persistence.storageClass | quote }}
   {{- end }}
+{{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -250,12 +284,13 @@ data:
   init-dtrack.sh: |
     #!/bin/sh
     # Bootstrap Dependency-Track: change the default admin password, then
-    # generate an API key for the Automation team and write it onto a shared
-    # volume for the backend. Optionally enables NVD API mirroring.
+    # generate an API key for the Automation team and store it in a shared
+    # volume or Kubernetes Secret for the backend, and grant the Automation
+    # team the permissions the backend needs. Optionally enables NVD mirroring.
     #
-    # With dependencyTrack.existingApiKeySecret set there is no key to read and
-    # no volume to write it to, so DEPENDENCY_TRACK_API_KEY_FILE is unset and
-    # this Job reconciles the admin password (and, when
+    # With an externally managed dependencyTrack.existingApiKeySecret there
+    # is no key to generate. Unless manageApiKeySecret is enabled, this Job
+    # reconciles the admin password (and, when
     # dependencyTrack.bootstrap.nvdApiEnabled is true, the NVD property) only.
     #
     # Deliberately depends on curl only. An earlier version ran
@@ -272,12 +307,46 @@ data:
     DT_NEW_PASS="${DEPENDENCY_TRACK_ADMIN_PASSWORD:-}"
     # Empty when the key is supplied through dependencyTrack.existingApiKeySecret.
     API_KEY_FILE="${DEPENDENCY_TRACK_API_KEY_FILE:-}"
+    API_KEY_SECRET="${DEPENDENCY_TRACK_API_KEY_SECRET:-}"
     NVD_API_ENABLED="${NVD_API_ENABLED:-false}"
+    # dependencyTrack.bootstrap.automationPermissions, validated by the chart
+    # (uppercase identifiers only). Empty skips the permission grants.
+    AUTOMATION_PERMISSIONS="{{ include "artifact-keeper.dtrackAutomationPermissions" . }}"
 
     fail() {
       echo "[dtrack-init] ERROR: $1" >&2
       exit 1
     }
+
+    # Secret mode uses the stock curl image, without installing jq or kubectl.
+    # The optional Secret volume validates the key through the kubelet's JSON
+    # handling. It may be absent on first install, so it cannot block this Job.
+    if [ -n "$API_KEY_SECRET" ]; then
+      [ -z "$API_KEY_FILE" ] || fail "API key Secret and file modes are mutually exclusive"
+      KUBE_SA_DIR="/var/run/secrets/kubernetes.io/serviceaccount"
+      KUBE_API="https://kubernetes.default.svc"
+      KUBE_NAMESPACE=$(cat "$KUBE_SA_DIR/namespace")
+      [ -r "$KUBE_SA_DIR/token" ] || fail "Kubernetes ServiceAccount token is missing"
+      umask 077
+      KUBE_TMP=$(mktemp -d)
+      trap 'rm -rf "$KUBE_TMP"' EXIT
+      printf 'Authorization: Bearer %s\n' "$(cat "$KUBE_SA_DIR/token")" > "$KUBE_TMP/header"
+      read_api_key_secret() {
+        curl -sS --connect-timeout 5 --max-time 30 \
+          --cacert "$KUBE_SA_DIR/ca.crt" -H "@$KUBE_TMP/header" \
+          -o /dev/null -w '%{http_code}' \
+          "$KUBE_API/api/v1/namespaces/$KUBE_NAMESPACE/secrets/$API_KEY_SECRET"
+      }
+      SECRET_HTTP=$(read_api_key_secret) || fail "Could not contact the Kubernetes API"
+      case "$SECRET_HTTP" in
+        200)
+          [ -s /existing-api-key/api-key ] || fail "Existing API-key Secret has no nonempty API_KEY entry"
+          echo "[dtrack-init] Existing API-key Secret found; preserving it"
+          ;;
+        404) ;;
+        *) fail "Kubernetes API returned HTTP $SECRET_HTTP while reading the API-key Secret" ;;
+      esac
+    fi
 
     # Fail before touching the API rather than sending an empty password to
     # forceChangePassword, which Dependency-Track rejects with 406.
@@ -285,18 +354,32 @@ data:
       fail "DEPENDENCY_TRACK_ADMIN_PASSWORD is empty. The chart generates one when dependencyTrack.adminPassword is unset; an empty value here means the Secret was supplied externally without this key."
     fi
 
-    # Generate a key only when a key file is wanted and not yet written. With
-    # existingApiKeySecret there is no key file, so no key is ever generated.
+    # Generate a key only when the managed Secret or legacy key file is absent.
+    # Externally supplied Secrets are never changed.
     NEED_KEY=false
-    if [ -n "$API_KEY_FILE" ]; then
+    # Grant the Automation team its permissions on every run, including when
+    # the key already exists, so installs bootstrapped before the grants
+    # existed (or whose grants were removed) are repaired on the next upgrade.
+    # Not with an operator-supplied dependencyTrack.existingApiKeySecret: that
+    # key may belong to any team, which the operator manages.
+    GRANT_PERMISSIONS=false
+    if { [ -n "$API_KEY_SECRET" ] || [ -n "$API_KEY_FILE" ]; } && [ -n "$AUTOMATION_PERMISSIONS" ]; then
+      GRANT_PERMISSIONS=true
+    fi
+    if [ -n "$API_KEY_SECRET" ]; then
+      if [ "$SECRET_HTTP" = "404" ]; then
+        NEED_KEY=true
+      fi
+    elif [ -n "$API_KEY_FILE" ]; then
       if [ -f "$API_KEY_FILE" ] && [ -s "$API_KEY_FILE" ]; then
-        if [ "$NVD_API_ENABLED" != "true" ]; then
+        if [ "$NVD_API_ENABLED" != "true" ] && [ "$GRANT_PERMISSIONS" != "true" ]; then
           echo "[dtrack-init] API key already provisioned, nothing to do"
           exit 0
         fi
-        # Keep going only to apply dependencyTrack.bootstrap.nvdApiEnabled, so
-        # turning it on for an existing install takes effect on the next upgrade.
-        echo "[dtrack-init] API key already provisioned; applying NVD setting only"
+        # Keep going only to reconcile the Automation team permissions and
+        # dependencyTrack.bootstrap.nvdApiEnabled, so either takes effect on
+        # an existing install at the next upgrade.
+        echo "[dtrack-init] API key already provisioned; reconciling settings only"
       else
         NEED_KEY=true
       fi
@@ -345,11 +428,12 @@ data:
 
     [ -n "$TOKEN" ] || fail "authentication failed after password change"
 
-    if [ -z "$API_KEY_FILE" ]; then
+    if [ -z "$API_KEY_FILE" ] && [ -z "$API_KEY_SECRET" ]; then
       echo "[dtrack-init] API key supplied through dependencyTrack.existingApiKeySecret; admin password reconciled, no key to generate"
     fi
 
-    if [ "$NEED_KEY" = "true" ]; then
+    TEAM_UUID=""
+    if [ "$NEED_KEY" = "true" ] || [ "$GRANT_PERMISSIONS" = "true" ]; then
       TEAMS=$(curl -sS -f "$DT_URL/api/v1/team" -H "Authorization: Bearer $TOKEN") \
         || fail "could not list teams"
 
@@ -368,14 +452,17 @@ data:
         "") fail "could not extract the Automation team UUID. The Dependency-Track response shape may have changed." ;;
         *[!0-9A-Fa-f-]*) fail "extracted team UUID contains unexpected characters" ;;
       esac
+    fi
+
+    if [ "$NEED_KEY" = "true" ]; then
 
       # Generate a new key rather than reading one back from the team
       # listing: from 4.13 Dependency-Track hashes API keys and the listing
       # only carries a masked form. PUT /api/v1/team/{uuid}/key is the
       # generate call on every 4.x release (201 with the plaintext key in the
       # body, the only time it is returned); POST only regenerates an
-      # existing key. Each successful run adds one key to the team; the early
-      # exit above keeps that to once per shared volume.
+      # existing key. Each successful run adds one key to the team; NEED_KEY
+      # above keeps that to once per shared volume or managed Secret.
       echo "[dtrack-init] Generating an API key for the Automation team"
       KEY_RESP=$(curl -sS -f -X PUT "$DT_URL/api/v1/team/$TEAM_UUID/key" \
         -H "Authorization: Bearer $TOKEN" \
@@ -396,20 +483,90 @@ data:
         *[!A-Za-z0-9_-]*) fail "extracted API key contains unexpected characters, refusing to write it" ;;
       esac
 
-      # umask 077 keeps the key from being world-readable on the shared PVC.
-      # The backend pod runs as a different UID (1001, fsGroup 0) than this Job
-      # (1000/1000); it can read the 0600 file because the kubelet re-applies
-      # fsGroup ownership on volume mount (fsGroupChangePolicy defaults to
-      # Always). If you override fsGroupChangePolicy to OnRootMismatch on the
-      # backend pod, verify it can still read this file.
-      #
       # Write to a temp file and rename: the key cannot be read back from
       # Dependency-Track, and a truncated file would pass the non-empty check
       # above on the next run and never be replaced.
-      umask 077
-      printf '%s\n' "$API_KEY" > "$API_KEY_FILE.tmp"
-      mv "$API_KEY_FILE.tmp" "$API_KEY_FILE"
-      echo "[dtrack-init] API key written to $API_KEY_FILE"
+      if [ -n "$API_KEY_SECRET" ]; then
+        # Names are validated by the chart and API_KEY has been restricted to
+        # JSON-safe characters above. Send key material on stdin, not argv.
+        # Do not add an Argo tracking label or a Job ownerReference: the key
+        # must survive hook cleanup, pruning and subsequent chart upgrades.
+        CREATE_HTTP=$(
+          printf '{"apiVersion":"v1","kind":"Secret","metadata":{"name":"%s","labels":{"app.kubernetes.io/name":"artifact-keeper","app.kubernetes.io/component":"dependency-track-api-key"}},"type":"Opaque","stringData":{"API_KEY":"%s"}}' "$API_KEY_SECRET" "$API_KEY" |
+          curl -sS --connect-timeout 5 --max-time 30 \
+            --cacert "$KUBE_SA_DIR/ca.crt" -H "@$KUBE_TMP/header" \
+            -H "Content-Type: application/json" -X POST --data-binary @- \
+            -o /dev/null -w '%{http_code}' \
+            "$KUBE_API/api/v1/namespaces/$KUBE_NAMESPACE/secrets"
+        ) || fail "Could not create the Kubernetes API-key Secret"
+        case "$CREATE_HTTP" in
+          201) echo "[dtrack-init] Kubernetes API-key Secret created" ;;
+          409)
+            # A concurrent bootstrap won. Never overwrite its key. Wait for
+            # the optional Secret volume to observe the winner's value.
+            SECRET_HTTP=$(read_api_key_secret) || fail "Could not recheck the API-key Secret"
+            [ "$SECRET_HTTP" = "200" ] || fail "API-key Secret unreadable after creation conflict"
+            attempt=0
+            until [ -s /existing-api-key/api-key ]; do
+              attempt=$((attempt + 1))
+              [ "$attempt" -le 120 ] || fail "Existing API-key Secret has no nonempty API_KEY entry"
+              sleep 1
+            done
+            echo "[dtrack-init] Concurrent API-key Secret preserved"
+            ;;
+          *) fail "Kubernetes API returned HTTP $CREATE_HTTP while creating the API-key Secret" ;;
+        esac
+      else
+        # Legacy shared-config PVC handoff. The backend runs as a different
+        # UID (1001, fsGroup 0) than this Job (1000), so it can only read the
+        # key through the file's group: write it 0640 (umask 027), never
+        # world-readable. The previous umask 077 wrote 0600, which the backend
+        # could not read (#318). The kubelet applies fsGroup ownership and
+        # group permission bits only when a pod mounts the volume, and the
+        # backend has usually mounted it before this Job writes the key, so
+        # nothing adds group read to the file afterwards; some volume types
+        # (hostPath-backed local-path provisioners, for example) get no
+        # fsGroup handling at all. The file's group is this Job's primary
+        # group (0 unless runAsGroup is set, because the image has no account
+        # for UID 1000) or, on volumes with fsGroup handling, the directory's
+        # setgid group, and the backend reads it through fsGroup 0. When that
+        # setgid group is this Job's fsGroup (1000) instead, the backend can
+        # read the file after its next restart, when the kubelet re-applies
+        # the backend's fsGroup and group read bits. To avoid
+        # the file handoff and its group dependency entirely, use
+        # dependencyTrack.bootstrap.manageApiKeySecret.
+        umask 027
+        printf '%s\n' "$API_KEY" > "$API_KEY_FILE.tmp"
+        mv "$API_KEY_FILE.tmp" "$API_KEY_FILE"
+        echo "[dtrack-init] API key written to $API_KEY_FILE"
+      fi
+    fi
+
+    # Grant the Automation team the permissions the backend needs (#168).
+    # Dependency-Track creates the team with BOM_UPLOAD and VIEW_PORTFOLIO
+    # only, so the backend's POST /api/v1/project failed with 403 and no SBOM
+    # ever reached Dependency-Track. POST /api/v1/permission/{name}/team/{uuid}
+    # is idempotent: 200 when it adds the permission, 304 when the team
+    # already has it. Runs after the key is stored, so a failure here leaves
+    # the key in place and the Job's retry only repeats the grants. A
+    # permission this Dependency-Track release does not know (404) fails the
+    # Job; remove it from dependencyTrack.bootstrap.automationPermissions.
+    if [ "$GRANT_PERMISSIONS" = "true" ]; then
+      GRANTED=""
+      PRESENT=""
+      FAILED=""
+      for PERM in $AUTOMATION_PERMISSIONS; do
+        PERM_HTTP=$(curl -s -o /dev/null -w '%{http_code}' \
+          -X POST "$DT_URL/api/v1/permission/$PERM/team/$TEAM_UUID" \
+          -H "Authorization: Bearer $TOKEN" || true)
+        case "$PERM_HTTP" in
+          200|201|204) GRANTED="$GRANTED $PERM" ;;
+          304) PRESENT="$PRESENT $PERM" ;;
+          *) FAILED="$FAILED $PERM(HTTP $PERM_HTTP)" ;;
+        esac
+      done
+      echo "[dtrack-init] Automation team permissions: granted${GRANTED:- none}; already present${PRESENT:- none}${FAILED:+; failed$FAILED}"
+      [ -z "$FAILED" ] || fail "could not grant Automation team permission(s):$FAILED"
     fi
 
     # Opt-in (dependencyTrack.bootstrap.nvdApiEnabled): switch NVD mirroring
@@ -433,23 +590,37 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
+  {{- if $manageApiKeySecret }}
+  # Helm treats this as a normal resource, so --wait cannot deadlock waiting
+  # for a backend whose Secret only a post-install hook would create. A fresh
+  # name each revision also avoids patching an immutable Job pod template.
+  name: {{ printf "%s-dtrack-init-%d" (include "artifact-keeper.fullname" . | trunc 40 | trimSuffix "-") .Release.Revision }}
+  {{- else }}
   name: {{ include "artifact-keeper.fullname" . }}-dtrack-init
+  {{- end }}
   labels:
     {{- include "artifact-keeper.labels" . | nindent 4 }}
     app.kubernetes.io/component: dependency-track
   annotations:
+    {{- if $manageApiKeySecret }}
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "0"
+    {{- else }}
     # Run as a hook, not a chart-managed resource. A Job's pod template is
     # immutable, so a plain Job breaks every "helm upgrade" that touches its
     # spec with a "field is immutable" error until someone deletes the old Job
     # by hand. before-hook-creation deletes the previous Job before each run
     # (same pattern as fleet-db-bootstrap-job.yaml). post-install/post-upgrade
     # rather than pre-*: the Job needs the Dependency-Track Deployment, the
-    # Secret, and the script ConfigMap to exist first. The script exits 0
-    # immediately when the API key is already provisioned, so re-running on
-    # every upgrade is cheap.
+    # Secret, and the script ConfigMap to exist first. When the API key is
+    # already provisioned the script only logs in and reconciles the
+    # Automation team permissions (and the NVD setting, when enabled), so
+    # re-running on every upgrade is cheap.
     "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-weight": "0"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    {{- end }}
 spec:
   backoffLimit: 3
   template:
@@ -458,7 +629,12 @@ spec:
         {{- include "artifact-keeper.dtrack.selectorLabels" . | nindent 8 }}
     spec:
       restartPolicy: OnFailure
+      {{- if $manageApiKeySecret }}
+      serviceAccountName: {{ include "artifact-keeper.fullname" . }}-dtrack-bootstrap
+      automountServiceAccountToken: true
+      {{- else }}
       automountServiceAccountToken: false
+      {{- end }}
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -510,6 +686,10 @@ spec:
               value: "http://{{ include "artifact-keeper.fullname" . }}-dtrack:8080"
             - name: NVD_API_ENABLED
               value: {{ .Values.dependencyTrack.bootstrap.nvdApiEnabled | toString | quote }}
+            {{- if $manageApiKeySecret }}
+            - name: DEPENDENCY_TRACK_API_KEY_SECRET
+              value: {{ .Values.dependencyTrack.existingApiKeySecret | quote }}
+            {{- end }}
             - name: DEPENDENCY_TRACK_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -526,6 +706,13 @@ spec:
             - name: init-script
               mountPath: /scripts
               readOnly: true
+            {{- if $manageApiKeySecret }}
+            - name: existing-api-key
+              mountPath: /existing-api-key
+              readOnly: true
+            - name: bootstrap-tmp
+              mountPath: /tmp
+            {{- end }}
             {{- if eq (include "artifact-keeper.dtrackApiKeyFile" .) "true" }}
             - name: shared-config
               mountPath: /shared
@@ -535,10 +722,23 @@ spec:
           configMap:
             name: {{ include "artifact-keeper.fullname" . }}-dtrack-init
             defaultMode: 0755
+        {{- if $manageApiKeySecret }}
+        - name: existing-api-key
+          secret:
+            secretName: {{ .Values.dependencyTrack.existingApiKeySecret }}
+            optional: true
+            items:
+              - key: API_KEY
+                path: api-key
+        - name: bootstrap-tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Mi
+        {{- end }}
         {{- if eq (include "artifact-keeper.dtrackApiKeyFile" .) "true" }}
         - name: shared-config
           persistentVolumeClaim:
-            claimName: {{ include "artifact-keeper.fullname" . }}-shared-config
+            claimName: {{ include "artifact-keeper.sharedConfigClaimName" . }}
         {{- end }}
 {{- end }}
 {{- end }}

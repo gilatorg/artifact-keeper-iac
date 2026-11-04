@@ -2,6 +2,18 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
   "properties": {
+    "ingress": {
+      "type": "object",
+      "properties": {
+        "nginxAnnotations": {"type": "boolean"}
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "properties": {
+        "generate": {"type": "boolean"}
+      }
+    },
     "httpRoute": {
       "type": "object",
       "additionalProperties": false,
@@ -53,6 +65,14 @@
             "corsAllowOrigin": {"type": "string", "minLength": 1}
           }
         },
+        "timeouts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "request": {"$ref": "#/definitions/gatewayDuration"},
+            "backendRequest": {"$ref": "#/definitions/gatewayDuration"}
+          }
+        },
         "networkPolicy": {
           "type": "object",
           "additionalProperties": false,
@@ -75,6 +95,13 @@
     }
   },
   "definitions": {
+    "gatewayDuration": {
+      "anyOf": [
+        {"type": "null"},
+        {"const": ""},
+        {"type": "string", "pattern": "^([0-9]{1,5}(h|m|s|ms)){1,4}$"}
+      ]
+    },
     "dnsSubdomain": {
       "type": "string",
       "minLength": 1,
